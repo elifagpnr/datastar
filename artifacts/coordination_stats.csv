@@ -1,0 +1,24 @@
+narrative_signature,cluster_size,cluster_author_nunique,cluster_platform_nunique,cluster_language_nunique,cluster_theme_nunique,cluster_first_seen,cluster_last_seen,cluster_example_text,signature_term_count,cluster_window_hours,coord_size_risk,coord_author_spread_risk,coord_platform_spread_risk,coord_time_compactness_risk,coordination_risk,cluster_content_similarity,cluster_confidence_score
+kw:#paws|paws|share,8,8,1,1,1,2024-11-14 20:13:55+00:00,2024-11-14 20:33:18+00:00,Share your #PAWS,3,0.32305555555555554,1.0,1.0,0.0,1.0,0.85,1.0,0.9400000000000001
+kw:$btc|btc,6,6,1,4,1,2024-11-19 20:37:39+00:00,2024-11-22 19:21:43+00:00,$BTC,2,70.73444444444445,1.0,1.0,0.0,0.33456730843698207,0.7834567308436982,1.0,0.7536418271092454
+kw:aaron|aaron mercury|awards|mercury,6,4,1,2,1,2024-11-21 19:13:07+00:00,2024-11-21 20:31:10+00:00,AARON MERCURY EN TÚ AWARDS que emoción,4,1.3008333333333333,1.0,0.75,0.0,1.0,0.7625,1.0,0.8724999999999999
+kw:absolute|absolute cinema|cinema,4,3,2,1,1,2024-11-19 20:08:07+00:00,2024-11-22 19:57:11+00:00,Absolute Cinema,3,71.81777777777778,1.0,0.5,0.3333333333333333,0.32958984375,0.657958984375,1.0,0.5973974609375
+kw:anniversary|back|memories|nike|nikke,4,4,1,1,1,2024-11-19 20:35:45+00:00,2024-11-20 20:32:13+00:00,"NIKKE 2nd Anniversary。
+ニケたちとの2周年の思い出を振り返り、勝利のメッセージを宇宙に届けましょう！
+
+#NIKKEonSatellite",5,23.941111111111113,1.0,0.75,0.0,0.9622666726065844,0.7587266672606584,1.0,0.883066668151646
+kw:back|collaborate|follow|let,6,5,1,1,1,2024-11-19 19:01:04+00:00,2024-11-21 19:57:19+00:00,Please Follow Me Back Let's Collaborate,4,48.9375,1.0,1.0,0.0,0.4806007509386733,0.7980600750938673,1.0,0.8301501877346683
+kw:back|collab|follow|follow back|project|promotion|sir|sir follow,4,3,1,1,1,2024-11-21 20:04:47+00:00,2024-11-22 20:11:26+00:00,"Please sir follow back, let's collab for the promotion of your project",8,24.110833333333332,1.0,0.5,0.0,0.9557627849865596,0.670576278498656,1.0,0.8139406962466398
+kw:birds|feather,4,3,3,1,2,2024-11-19 19:16:36+00:00,2024-11-21 19:57:18+00:00,Something something birds of a feather,2,48.678333333333335,1.0,0.5,0.6666666666666666,0.48310799476633004,0.7233107994766329,1.0,0.6157769986915824
+kw:btc|https|join,7,7,1,1,1,2024-11-22 19:06:08+00:00,2024-11-22 20:51:24+00:00,"https://t.me/onus_tap_tap_tap_bot/join?startapp=1729110180544…
+
+BTC",3,1.7544444444444445,1.0,1.0,0.0,1.0,0.85,1.0,0.9400000000000001
+kw:business|business proposal|collaboration|potential|potential collaboration|project|proposal,5,3,1,1,1,2024-11-21 19:12:13+00:00,2024-11-22 20:09:43+00:00,"I have business proposal for your project, Please DM me for potential Collaboration",7,24.958333333333332,1.0,0.5,0.0,0.9245585874799358,0.6674558587479935,1.0,0.806139646869984
+kw:cinema|cinema history|greatest|greatest villains|history|repost|villains,4,4,1,1,1,2024-11-21 20:41:40+00:00,2024-11-22 20:14:46+00:00,Repost with one of the greatest villains in cinema history,7,23.551666666666666,1.0,0.75,0.0,0.977530378114181,0.7602530378114181,1.0,0.9068825945285452
+kw:cult|disciple|faithful|higherrrrrr|higherrrrrr signature|memes|pledge|signature,9,5,1,1,1,2024-11-19 20:07:38+00:00,2024-11-22 19:13:57+00:00,"I am one of the faithful, a disciple of the cult of memes
+
+We are going much, much higherrrrrr
+
+Signature: 0x961c8b42f6e614d51e3683688babcf06eec496189ae0691516a39d7fffdc00dd183161a5f5237cbafd03ae9a577fca4db56f3847ec11cca",8,71.10527777777777,1.0,1.0,0.0,0.3328466478413123,0.7832846647841313,1.0,0.833211661960328
+kw:threshold|top,37,19,1,1,1,2024-11-19 19:14:20+00:00,2024-11-21 20:33:59+00:00,高端局 有门槛 介意勿扰 点头像进主页去电报看资料！,2,49.3275,1.0,1.0,0.0,0.4768764591922905,0.797687645919229,1.0,0.7892191147980726
+tx:one|which,4,3,2,1,1,2024-11-19 20:16:04+00:00,2024-11-20 20:24:30+00:00,Which one?,2,24.140555555555554,1.0,0.5,0.3333333333333333,0.9546328420215234,0.7204632842021523,1.0,0.7336582105053809
