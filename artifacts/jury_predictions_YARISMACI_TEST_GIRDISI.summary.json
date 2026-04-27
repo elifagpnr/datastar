@@ -1,0 +1,58 @@
+{
+  "input_csv": "jury_inputs/YARISMACI_TEST_GIRDISI.csv",
+  "output_csv": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI.csv",
+  "rows_read": 443,
+  "texts_scored": 443,
+  "low_count": 383,
+  "review_count": 24,
+  "high_count": 36,
+  "review_high_count": 60,
+  "manipulative_count": 36,
+  "low_share": 0.8645598194130926,
+  "review_share": 0.05417607223476298,
+  "high_share": 0.08126410835214447,
+  "review_high_share": 0.13544018058690746,
+  "manipulative_share": 0.08126410835214447,
+  "risk_score_mean": 0.18629119638826183,
+  "risk_score_median": 0.1397,
+  "risk_score_p90": 0.5,
+  "risk_score_max": 0.72,
+  "content_risk_mean": 0.18629119638826183,
+  "nlp_text_risk_mean": 0.6606627071823205,
+  "evidence_text_only_count": 443,
+  "evidence_text_only_share": 1.0,
+  "top_reason_codes": {
+    "TEXT_ONLY_METADATA_UNAVAILABLE": 443,
+    "LOW_CONTENT_RISK": 266,
+    "LINK_HASHTAG_MENTION_DENSE": 98,
+    "CALL_TO_ACTION_LANGUAGE": 28,
+    "ENGAGEMENT_OR_LINK_BAIT": 23,
+    "CREDENTIAL_OR_PAYMENT_DATA_PHISHING": 13,
+    "WALLET_VERIFICATION_BAIT": 12,
+    "AUTHORITY_IMPERSONATION": 12
+  },
+  "top_psychological_triggers": {
+    "authority_impersonation": 12,
+    "social_proof_trigger": 4,
+    "urgency_bait": 3,
+    "fomo_trigger": 1
+  },
+  "summary_csv": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_summary.csv",
+  "summary_markdown": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_summary.md",
+  "top_risk_examples_csv": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_top_risk_examples.csv",
+  "batch_plot_paths": [
+    "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_risk_band_distribution.png",
+    "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_risk_score_histogram.png",
+    "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_reason_code_breakdown.png",
+    "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_psychological_trigger_breakdown.png"
+  ],
+  "submission_output_csv": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI.csv",
+  "detailed_output_csv": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI_detailed.csv",
+  "submission_columns": [
+    "test_id",
+    "text",
+    "label"
+  ],
+  "label_definition": "0-1 manipulative risk score; 0 means more organic, 1 means more manipulative.",
+  "summary_json": "artifacts/jury_predictions_YARISMACI_TEST_GIRDISI.summary.json"
+}

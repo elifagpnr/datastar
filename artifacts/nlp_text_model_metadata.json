@@ -1,14 +1,14 @@
 {
   "model_version": "pseudo-label-hash-ngram-v1",
   "hash_dim": 131072,
-  "positive_candidates": 3656,
-  "negative_candidates": 112968,
-  "train_docs_per_class": 3656,
+  "positive_candidates": 2861,
+  "negative_candidates": 125789,
+  "train_docs_per_class": 2861,
   "trained": true,
   "positive_rule": "risk_score >= 0.65, non-empty, meaningful text, strong reason",
   "negative_rule": "risk_score <= 0.20, LOW_CONTENT_RISK, non-empty, meaningful text",
-  "positive_doc_features": 2626537,
-  "negative_doc_features": 1227382,
+  "positive_doc_features": 1873008,
+  "negative_doc_features": 997437,
   "alpha": 0.5,
   "scoring": "sigmoid(mean(feature_log_odds)) with rule-evidence gate"
 }

@@ -31,19 +31,19 @@
 ## 5. Manipülasyon Haritası
 - Skorlanan örnek satır: 200,000
 - Risk bantları: High >= 0.65, Review >= 0.45, aksi halde Low.
-- Örneklemde Review + High oranı: 5.1%
-- Örneklemde High-risk oranı: 2.3%
+- Örneklemde Review + High oranı: 4.0%
+- Örneklemde High-risk oranı: 1.8%
 - Ana görsel: `artifacts/risk_map_language_platform.png`
 - Temporal kampanya pencereleri: 0 Campaign Burst; görsel `artifacts/temporal_burst_windows.png`
 
 ---
 
 ## 6. En Şüpheli Segmentler
-- en / x.com / Cryptocurrency: 913 Review/High gönderi (530 High)
-- en / x.com / People: 614 Review/High gönderi (236 High)
-- en / x.com / Technology: 611 Review/High gönderi (337 High)
-- en / reddit.com / Technology: 608 Review/High gönderi (422 High)
-- en / x.com / Entertainment: 569 Review/High gönderi (205 High)
+- en / x.com / Cryptocurrency: 799 Review/High gönderi (484 High)
+- en / x.com / Technology: 544 Review/High gönderi (333 High)
+- en / x.com / People: 505 Review/High gönderi (198 High)
+- en / reddit.com / Technology: 459 Review/High gönderi (346 High)
+- en / x.com / Entertainment: 420 Review/High gönderi (147 High)
 - Platform-normalize risk tablosu: `artifacts/platform_normalized_risk.csv`
 
 ---
@@ -59,9 +59,9 @@
 ---
 
 ## 8. Normalize Platform ve Author Sinyalleri
-- news.ycombinator.com: risk indeksi=3.00, Review/High oranı=15.4%
-- boards.4channel.org: risk indeksi=1.97, Review/High oranı=10.1%
-- reddit.com: risk indeksi=1.21, Review/High oranı=6.2%
+- news.ycombinator.com: risk indeksi=1.53, Review/High oranı=6.2%
+- boards.4channel.org: risk indeksi=1.44, Review/High oranı=5.8%
+- youtube.com: risk indeksi=1.18, Review/High oranı=4.8%
 - b34e6852df...: author risk=0.97, gönderi=304, Review/High oranı=100.0%
 - 31ce25fc27...: author risk=0.88, gönderi=8, Review/High oranı=0.0%
 - 8d501770c7...: author risk=0.87, gönderi=3, Review/High oranı=100.0%
@@ -70,11 +70,11 @@
 
 ## 9. Kanıt Scorecard
 - Skorlanan örnek satır: 200,000
-- Review + High adet/oran: 10,264 (5.1%)
-- High adet/oran: 4,516 (2.3%)
-- High-risk boş olmayan oran: 98.3%
-- Güçlü reason destekli High oranı: 82.9%
-- Sunuma uygun güçlü High örnek: 3,746
+- Review + High adet/oran: 8,033 (4.0%)
+- High adet/oran: 3,663 (1.8%)
+- High-risk boş olmayan oran: 97.9%
+- Güçlü reason destekli High oranı: 80.6%
+- Sunuma uygun güçlü High örnek: 2,953
 - Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`, `feature_importance_proxy.png`, `risk_component_contribution.png`.
 - Kampanya dönemi kanıtı: `temporal_burst_windows.csv` ve `temporal_burst_windows.png`.
 - Etiket sağlanmadığı için bunlar proxy kanıt metrikleri ve senaryo kontrolleridir; etiketli performans metriği iddiası değildir.
@@ -87,7 +87,7 @@
 - Canlı inference hazırlık senaryoları: 10/10 başarılı.
 - Benchmark artifact'i: `artifacts/live_inference_benchmark.csv`.
 - NLP text model artifact'i: `artifacts/nlp_text_model.npz`; eğitim özeti: `artifacts/nlp_text_model_metadata.json`.
-- NLP eğitim verisi: yüksek güvenli pseudo-positive ve pseudo-negative örneklerden sınıf başına 3,656 metin.
+- NLP eğitim verisi: yüksek güvenli pseudo-positive ve pseudo-negative örneklerden sınıf başına 2,861 metin.
 - Sınırlar: gözetimsiz eşikleme kullanılır; exact/near-exact narrative signature yaklaşımı vardır; metadata geldikçe güven seviyesi artar.
 
 ---

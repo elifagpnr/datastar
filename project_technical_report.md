@@ -97,6 +97,7 @@ Yapılan temel düzenlemeler:
 | Whitespace temizliği | Baş/son boşluklar kaldırıldı. | Sadece boşluk içeren metinleri gerçek boş metin gibi ele almak. |
 | Casefold | Metinler karşılaştırma için küçük harfe ve case-insensitive forma çekildi. | Pattern eşleşmelerini tutarlı yapmak. |
 | Türkçe karakter katlama | `ğ, ü, ş, ı, ö, ç` gibi karakterler ASCII karşılıklarına çevrildi. | Türkçe ve İngilizce sinyal sözlüklerini aynı normalize edilmiş uzayda çalıştırmak. |
+| Unicode korumalı pattern kanalı | Arapça, Hintçe, Japonca, Korece, Rusça ve Çince gibi Latin dışı alfabeler ayrıca orijinal Unicode metin üzerinde aranır. | Çok dilli canlı test metinlerinde semantic scam/phishing pattern'larının kaybolmasını önlemek. |
 | URL temizliği | Signature çıkarırken URL'ler metinden temizlendi. | Signature'ın linkten değil, anlatıdan oluşmasını sağlamak. |
 | Hashtag/mention temizliği | Signature aşamasında `#...` ve `@...` temizlendi. | Kampanya anlatısını link/mention gürültüsünden ayırmak. |
 
@@ -431,6 +432,8 @@ CTA tek başına manipülasyon değildir. Ancak link, urgency, finansal vaat vey
 
 Metinsel manipülasyon türleri pattern gruplarına ayrıldı:
 
+Pattern katmanı Türkçe ve İngilizceye ek olarak İspanyolca, Portekizce, Endonezce, Hintçe, Arapça, Fransızca, Almanca, Japonca, Korece, Rusça, İtalyanca ve Çince scam/phishing ifadeleriyle genişletildi. Latin alfabeli diller ASCII-normalized kanalda, Latin dışı alfabeler Unicode-preserving kanalda taranır.
+
 | Grup | Yakalanan Senaryo |
 |---|---|
 | `financial_bait` | Ek gelir, kripto, forex, garanti kar, 100x. |
@@ -441,6 +444,7 @@ Metinsel manipülasyon türleri pattern gruplarına ayrıldı:
 | `prize_fee` | Ödül kazandınız, kargo ücreti ödeyin. |
 | `debt_relief` | Kredi kartı borcu kurtarma vaadi. |
 | `wallet_verification` | Cüzdan doğrulama, MetaMask, USDT bonus. |
+| `credential_phishing` | Şifre, giriş bilgisi, banka/kart bilgisi, kimlik fotoğrafı isteme. |
 | `trading_bot_bait` | Trading bot, 100% legit, linktr.ee. |
 | `market_manipulation` | Gem alert, moon, Binance listing. |
 | `political_mobilization` | RT yap, tag'e destek ver, gizli belgeler. |

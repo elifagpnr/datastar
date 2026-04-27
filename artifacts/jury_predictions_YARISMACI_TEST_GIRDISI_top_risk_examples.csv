@@ -1,0 +1,45 @@
+test_id,source_row,source_column,risk_score,risk_band,label,top_reasons,psychological_triggers,text_preview
+TEST_0000,1,text,0.72,High,Manipulative,CALL_TO_ACTION_LANGUAGE;FINANCIAL_OR_CRYPTO_BAIT;TRADING_BOT_BAIT;MARKET_MANIPULATION_BAIT;NLP_TEXT_MODEL_SUPPORT;TEXT_ONLY_METADATA_UNAVAILABLE,,"I got a likely phishing email from ""service@paypal.com"". Even the mailed-by and signed-by fields were from https://t.co/a9YJ8xgLKw. No capital ""i"" to replace the ""l"".
+
+Contained a link to pay an invoice for $479 in Binan"
+TEST_0440,441,text,0.72,High,Manipulative,WALLET_VERIFICATION_BAIT;TEXT_ONLY_METADATA_UNAVAILABLE,,"@BonitasMedical Hi Bonitas, there was a fraudulent claim in my medical aid. I wrote emails and called the fraudulent line, no one has or willing to assist me."
+TEST_0414,415,text,0.72,High,Manipulative,CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,"Receiving reports of a sophisticated phishing scam in which ""Coinbase support"" calls you about a ""suspicious withdrawal request."" Next they walk you through ""resetting"" your password via a malicious phishing site.
+
+Stay "
+TEST_0179,180,text,0.72,High,Manipulative,PHISHING_URGENCY_THREAT;CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,"Phishing is a cyber-attack that uses fraudulent emails or websites to trick users into revealing sensitive information, such as login credentials or financial information. Attackers often masquerade as a trusted entity t"
+TEST_0029,30,text,0.72,High,Manipulative,FINANCIAL_OR_CRYPTO_BAIT;HEALTH_MIRACLE_CLAIM;WALLET_VERIFICATION_BAIT;TEXT_ONLY_METADATA_UNAVAILABLE,,"23 rd February N1 London. Opportunity for a dungeon slave or maid to serve @Deva_De_Vi and I. Clean, tidy, fetch and make tea in between sessions, wait quietly in your cage whilst we work. Deposit required. Email to outl"
+TEST_0398,399,text,0.72,High,Manipulative,CALL_TO_ACTION_LANGUAGE;AUTHORITY_IMPERSONATION;TEXT_ONLY_METADATA_UNAVAILABLE,authority_impersonation,"#Phishing is when someone tries to trick you into giving them sensitive information by pretending to be a trusted entity, like a bank or a government agency. 
+
+They may send you an #email or #SMS that looks legitimate an"
+TEST_0024,25,text,0.72,High,Manipulative,WALLET_VERIFICATION_BAIT;TEXT_ONLY_METADATA_UNAVAILABLE,,"Replacement VPS
+ registered user verification email activation is normal"
+TEST_0378,379,text,0.72,High,Manipulative,CALL_TO_ACTION_LANGUAGE;ENGAGEMENT_OR_LINK_BAIT;TEXT_ONLY_METADATA_UNAVAILABLE,,"By end of month, we’ll be able to just input into Airtable 
+
+&gt; email copy
+&gt; plain sales nav link
+&gt; clients name
+
+&amp; it’ll auto
+
+&gt; scrape LinkedIn
+&gt; enrich with emails
+&gt; clean emails
+&gt; clean catch-"
+TEST_0394,395,text,0.72,High,Manipulative,WALLET_VERIFICATION_BAIT;TEXT_ONLY_METADATA_UNAVAILABLE,,"@BCBSTX Were yall hacked last night? Many employees getting fraudulent Spam claim emails, and your website and App appear to not let anyone in today."
+TEST_0049,50,text,0.72,High,Manipulative,CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,"I see the SNP's very own James Bond has opened his data up to Foreign Operatives by putting his govt provided email password into a phishing mail.
+
+He sat on a committee and will have been through at least one security b"
+TEST_0374,375,text,0.72,High,Manipulative,CALL_TO_ACTION_LANGUAGE;AUTHORITY_IMPERSONATION;WALLET_VERIFICATION_BAIT;NLP_TEXT_MODEL_SUPPORT;TEXT_ONLY_METADATA_UNAVAILABLE,authority_impersonation,"@karthiksai21 Hi Karthik, we thank you for reporting the incident to us, you may received fraudulent SMS claiming to be from HDFC bank and asking you to verify (provide) your personal details by clicking on a link furnis"
+TEST_0359,360,text,0.72,High,Manipulative,WALLET_VERIFICATION_BAIT;TEXT_ONLY_METADATA_UNAVAILABLE,,"Attention all job seekers! Please be on the lookout for fraudulent job offers. All official email communication from Virtuos will come from our official email domain - @virtuosgames.com. 
+
+Please drop us a private messag"
+TEST_0035,36,text,0.72,High,Manipulative,CALL_TO_ACTION_LANGUAGE;AUTHORITY_IMPERSONATION;WALLET_VERIFICATION_BAIT;NLP_TEXT_MODEL_SUPPORT;TEXT_ONLY_METADATA_UNAVAILABLE,authority_impersonation,"@enggbhatta Hi, we thank you for reporting the incident to us, you may received fraudulent SMS claiming to be from HDFC bank and asking you to verify (provide) your personal details by clicking on a link furnished in the"
+TEST_0341,342,text,0.72,High,Manipulative,CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,@jash__shah through email : 1. Credit Card number/ Debit Card number 2. Credit Card PIN/ ATM PIN (personal identification number). 3. Netbanking/ Phonebanking Password. Please visit our website https://t.co/kXNPBM9b85 fo
+TEST_0348,349,text,0.72,High,Manipulative,PHISHING_URGENCY_THREAT;CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,"The former SNP Defence Spokesman entered his login details, including password, into a Russian spying website.
+
+What a 🤡. https://t.co/KLCQ7d1mxt"
+TEST_0079,80,text,0.72,High,Manipulative,CALL_TO_ACTION_LANGUAGE;AUTHORITY_IMPERSONATION;WALLET_VERIFICATION_BAIT;NLP_TEXT_MODEL_SUPPORT;TEXT_ONLY_METADATA_UNAVAILABLE,authority_impersonation,"@MB28413094 Hi, we thank you for reporting the incident to us, you may received fraudulent SMS claiming to be from HDFC bank and asking you to verify (provide) your personal details by clicking on a link furnished in the"
+TEST_0331,332,text,0.72,High,Manipulative,PHISHING_URGENCY_THREAT;TEXT_ONLY_METADATA_UNAVAILABLE,,"It has been almost a week since my main account was suspended due to spam misidentification by Twitter's AI, and the email server for Twitter's support desk was down. It is truly a shame that a company as large as Twitte"
+TEST_0333,334,text,0.72,High,Manipulative,CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,@karthiksai21 following through email : 1. Credit Card number/ Debit Card number 2. Credit Card PIN/ ATM PIN (personal identification number). 3. Netbanking/ Phonebanking Password. Please visit our website https://t.co/k
+TEST_0337,338,text,0.72,High,Manipulative,LINK_HASHTAG_MENTION_DENSE;PHISHING_URGENCY_THREAT;TEXT_ONLY_METADATA_UNAVAILABLE,,Get Unlimited Cloud Storage from https://t.co/ceXsSlXju3
+TEST_0273,274,text,0.72,High,Manipulative,CREDENTIAL_OR_PAYMENT_DATA_PHISHING;TEXT_ONLY_METADATA_UNAVAILABLE,,"Has anyone who is on Truth Social kicked off &amp; has to sign in again? I was &amp; forgot my password &amp; they don't send me a reset email. Very weird things on here, FB &amp; TS. 🤔"

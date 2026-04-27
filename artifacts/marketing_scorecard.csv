@@ -1,11 +1,11 @@
 metric,value,detail
 Skorlanan örnek satır,"200,000",Mevcut artifact üretiminde skorlanan toplam satır sayısı.
-Review + High adet/oran,"10,264 (5.1%)","Analist incelemesine ayrılan seçici, düşük olmayan risk havuzu."
-High adet/oran,"4,516 (2.3%)",Canlı inference sırasında Manipulative etiketi üreten yüksek riskli havuz.
-High-risk boş olmayan oran,98.3%,Boş metin anomalisi olmayan yüksek riskli satırların oranı.
-Güçlü reason destekli High oranı,82.9%,Güçlü manipülasyon sinyalleriyle açıklanabilen yüksek riskli kararların oranı.
-Sunuma uygun güçlü High örnek,"3,746","Kalite filtrelerinden sonra kalan, savunulabilir ve boş olmayan yüksek riskli örnek sayısı."
-En yüksek platform-normalize risk indeksi,news.ycombinator.com: 3.00x,"Yeterli örnek hacmine sahip platformlarda, veri seti ortalamasına göre göreli risk."
-En riskli segment,en / x.com / Cryptocurrency,913 Review+High gönderi.
+Review + High adet/oran,"8,033 (4.0%)","Analist incelemesine ayrılan seçici, düşük olmayan risk havuzu."
+High adet/oran,"3,663 (1.8%)",Canlı inference sırasında Manipulative etiketi üreten yüksek riskli havuz.
+High-risk boş olmayan oran,97.9%,Boş metin anomalisi olmayan yüksek riskli satırların oranı.
+Güçlü reason destekli High oranı,80.6%,Güçlü manipülasyon sinyalleriyle açıklanabilen yüksek riskli kararların oranı.
+Sunuma uygun güçlü High örnek,"2,953","Kalite filtrelerinden sonra kalan, savunulabilir ve boş olmayan yüksek riskli örnek sayısı."
+En yüksek platform-normalize risk indeksi,news.ycombinator.com: 1.53x,"Yeterli örnek hacmine sahip platformlarda, veri seti ortalamasına göre göreli risk."
+En riskli segment,en / x.com / Cryptocurrency,799 Review+High gönderi.
 Yüksek güvenli koordinasyon cluster,9,"Cluster confidence >= 0.80, coordination risk >= 0.65 ve zaman penceresi <= 72 saat."
 Canlı inference hazırlık kontrolü,10/10,Sentetik senaryo kontrolleri; etiketli performans metriği değildir.

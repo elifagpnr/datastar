@@ -21,7 +21,7 @@ DATA_PATH = Path("dataset/datathonFINAL.parquet")
 ARTIFACT_DIR = Path("artifacts")
 RISK_THRESHOLD = 0.65
 REVIEW_THRESHOLD = 0.45
-MODEL_VERSION = "text-calibration-v4-psychological-triggers"
+MODEL_VERSION = "text-calibration-v6-credential-finance-patterns"
 NLP_TEXT_MODEL_VERSION = "pseudo-label-hash-ngram-v1"
 NLP_HASH_DIM = 2 ** 17
 NLP_MAX_DOCS_PER_CLASS = 40_000
@@ -197,22 +197,79 @@ CALL_TO_ACTION_TERMS = {
     "vote",
 }
 
+CALL_TO_ACTION_TERMS.update(
+    {
+        "comprar",
+        "compra",
+        "gratis",
+        "oferta",
+        "clic",
+        "clique",
+        "cliquez",
+        "kaufen",
+        "kostenlos",
+        "klicken",
+        "acheter",
+        "gratuit",
+        "compra",
+        "clicca",
+        "beli",
+        "menang",
+        "klaim",
+        "verifikasi",
+        "kharido",
+        "muft",
+        "jeeto",
+        "kamao",
+        "abhi",
+        "turant",
+        "verificar",
+        "verifique",
+        "verifier",
+        "verifizieren",
+        "verifica",
+        "reclamar",
+        "resgatar",
+        "beanspruchen",
+        "subito",
+        "sofort",
+        "segera",
+        "entra",
+        "ottieni",
+        "tautan",
+        "enlace",
+        "lien",
+        "sorteo",
+        "sorteio",
+        "chame",
+        "direct",
+        "agora",
+        "entre",
+    }
+)
+
 SCAM_PATTERN_GROUPS = {
     "financial_bait": [
         r"\b(ek gelir|extra income|ayda|month extra income|gunde|daily|gunluk)\b",
-        r"\b(kazanmak|kazanmak ister|earn|make|profit|guaranteed profit)\b",
+        r"\b(kazanmak|kazanmak ister|earn|make|profit|guaranteed profit|guaranteed profits)\b",
         r"\b(\d[\d.,]*\s*(tl|usd|dolar|dollar|\$))\b",
         r"\b(crypto|kripto|vip crypto|vip kripto|forex|signal|sinyal)\b",
-        r"\b(trading bot|trade bot|bot|portfolio|portfoy|piyasa|piyasalar)\b",
+        r"\b(trading bot|trade bot|bot|portfolio|portfoy|piyasa|piyasalar|stock alerts|paid group)\b",
+        r"\b(private investment club|investment club|members are doubling portfolios|doubling portfolios|double your money)\b",
+        r"\b(profit signals|secret stock alerts|before the public hears|without effort|no risk|risk free)\b",
         r"\b(100x|x5|gem alert|dogemoon|moon|binance|liquidity locked|doxxed)\b",
     ],
     "phishing_threat": [
         r"\b(account|hesabiniz|hesabin).{0,60}\b(suspend|suspended|kapat|kapatilacaktir|closed)\b",
         r"\b(copyright|telif|ihlali|infringement|appeal|itiraz)\b",
         r"\b(24 hours|24 saat|formu doldur|fill out the form)\b",
+        r"\b(cloud storage|banking session|password expires|suspicious activity|security alert)\b",
+        r"\b(log in|login|confirm ownership|confirm your login|re-enter|enter your credentials|card details|card photo)\b",
+        r"\b(deleted unless|permanent account closure|keep your account active|restore access)\b",
     ],
     "engagement_bait": [
-        r"\b(giveaway|cekilis|hediye ceki|gift card|follow|takip|begen|like|tag|etiketle)\b",
+        r"\b(giveaway|cekilis|hediye ceki|gift card|follow|takip|begen|tag|etiketle)\b",
+        r"\b(like this post|like the post|like and share|like, share)\b",
         r"\b(followers|takipci|f4f|gt|yorumlara|comments)\b",
         r"\b(link in bio|link bioda|profilimdeki link|profile link|profile now|profilime gir|dm|dm'ye)\b",
     ],
@@ -232,8 +289,9 @@ SCAM_PATTERN_GROUPS = {
         r"\b(uzman danisman|expert consultant|consultants)\b",
     ],
     "urgency_bait": [
-        r"\b(hemen|right now|now|urgent|limited|silinmeden|before it gets deleted|24 saat|24 hours)\b",
-        r"\b(acil|cokmeden|son \d+ kisi|immediately|required|before it hits)\b",
+        r"\b(hemen|right now|urgent|limited|silinmeden|before it gets deleted|24 saat|24 hours)\b",
+        r"\b(buy now|verify now|claim now|join now|click now|dm now|enter now|connect now)\b",
+        r"\b(acil|cokmeden|son \d+ kisi|verification required|wallet.*required|required.*verification|before it hits)\b",
         r"\b(son sans|last chance|ending soon|ends soon|final call|kacirma|kacirmayin)\b",
         r"\b(son \d+ dakika|next \d+ minutes|only \d+ left|kontenjan son)\b",
     ],
@@ -272,6 +330,7 @@ SCAM_PATTERN_GROUPS = {
     ],
     "market_manipulation": [
         r"\b(100x|gem alert|dogemoon|moon|airdrop|binance|liquidity locked|doxxed)\b",
+        r"\b(coin is about to explode|about to explode|insider source|listing tomorrow|influencers.*reveal)\b",
         r"\b(x5|portfoy|portfolio|piyasalar|telegram grubu|vip telegram|vip)\b",
     ],
     "political_mobilization": [
@@ -279,9 +338,151 @@ SCAM_PATTERN_GROUPS = {
         r"\b(linki kopyalayip yayin|linki kopyala|kopyalayip yayin|yayin)\b",
         r"\b(gizli belgeler|belgeler sizdi|skandal|ana akim medya|asla gostermez|yalan haber|susturamazsiniz)\b",
         r"\b(uyan|oyun buyuk|gercekleri gormek|herkes bu tag)\b",
-        r"\b(everyone needs to see|vote them out|see this video)\b",
+        r"\b(everyone needs to see|vote them out|see this video|must repost|truth gets deleted|deleted by the media)\b",
+    ],
+    "credential_phishing": [
+        r"\b(password|credentials|login details|card details|card photo|banking session|bank account|account active)\b",
+        r"\b(upload your id|enter your password|enter your credentials|re-enter your card|confirm your login)\b",
+        r"\b(verify security|security verification|suspicious activity|keep your account active|restore access)\b",
     ],
 }
+
+MULTILINGUAL_SCAM_PATTERN_GROUPS = {
+    "financial_bait": [
+        r"\b(ingreso extra|dinero rapido|ganar dinero|renda extra|ganhar dinheiro|ganhe dinheiro|dinheiro rapido|dinheiro facil)\b",
+        r"\b(penghasilan tambahan|uang cepat|revenu supplementaire|argent rapide|schnelles geld|geld verdienen)\b",
+        r"\b(guadagno extra|soldi facili|paisa kamao|paise kamao|kamai kare|paisa kamayen)\b",
+        r"\b(criptomoneda|criptomoeda|kripto|cryptomonnaie|krypto|kryptowahrung|criptovaluta)\b",
+        r"\b(bot de trading|robot de trading|robo secreto|trading otomatis|handelsbot|bot di trading)\b",
+        r"\b(sinais de lucro|sem risco|grupo fechado|groupe vip|gagnez de l'argent|sans effort|segnali garantiti|gruppo crypto)\b",
+        r"\b(occasione unica|ultima chiamata|entra nel gruppo|coin prima|grupo vip de inversion|duplica tu dinero)\b",
+        r"(اربح|ارباح|دخل اضافي|اكسب|عملات رقمية|تداول|بوت التداول|استرداد مالي)",
+        r"(कमाएं|कमाई|पैसा|क्रिप्टो|ट्रेडिंग बॉट)",
+        r"(稼げる|副収入|暗号資産|仮想通貨|取引ボット|投資グループ|利益を保証)",
+        r"(수익|부업|암호화폐|코인|거래 봇)",
+        r"(заработай|доход|крипто|криптовалюта|торговый бот)",
+        r"(赚钱|收入|副业|加密货币|交易机器人)",
+    ],
+    "phishing_threat": [
+        r"\b(cuenta|conta|akun|compte|konto|conto|profilo).{0,60}\b(suspendida|suspendido|suspensa|ditangguhkan|diblokir|suspendu|gesperrt|sospeso|bloccato)\b",
+        r"\b(confirme su cuenta bancaria|cuenta bancaria|perdera el acceso|perdera acceso)\b",
+        r"\b(kata sandi|verifikasi keamanan|geben sie.*passwort|konto geschlossen)\b",
+        r"\b(derechos de autor|direitos autorais|hak cipta|droit d'auteur|urheberrecht|violacion|infraccion|infracao|violazione)\b",
+        r"\b(24 horas|24 heures|24 stunden|24 jam|24 ore|formulario de apelacion|formulaire d'appel|formulir banding)\b",
+        r"(حسابك.*(تعليق|ايقاف)|سيتم.*(تعليق|ايقاف).*حسابك|حقوق النشر|خلال 24 ساعة|نموذج الاعتراض|بيانات البطاقة)",
+        r"(आपका खाता.*निलंबित|कॉपीराइट|24 घंटे)",
+        r"(アカウント.*停止|著作権侵害|24時間.*異議)",
+        r"(계정.*정지|저작권 침해|24시간|비밀번호.*카드 정보|카드 정보.*비밀번호)",
+        r"(аккаунт.*заблокирован|авторск.*прав|24 часа)",
+        r"(账户.*停用|账号.*暂停|版权侵权|24小时)",
+    ],
+    "engagement_bait": [
+        r"\b(sorteo|sorteio|seguir|siga|etiqueta|curtir|ikuti|bagikan|suivez|suivre|folgen|teilen|seguire)\b",
+        r"\b(enlace en bio|link na bio|tautan di bio|lien dans la bio|link in der bio|lien en bio)\b",
+        r"(رابط في البايو|تابع|اعجاب|شارك)",
+        r"(फॉलो|लाइक|बायो में लिंक|शेयर)",
+        r"(プロフィールのリンク|フォロー|いいね|抽選)",
+        r"(프로필 링크|팔로우|좋아요|공유)",
+        r"(ссылка в био|подпишись|лайк|розыгрыш)",
+        r"(简介链接|主页链接|关注|点赞|抽奖)",
+    ],
+    "prize_fee": [
+        r"\b(felicidades|parabens|selamat|felicitations|gluckwunsch|congratulazioni).{0,50}\b(ganaste|ganhou|menang|gagne|gewonnen|vinto)\b",
+        r"\b(tarjeta regalo|cartao presente|kartu hadiah|carte cadeau|geschenkkarte|buono regalo)\b",
+        r"\b(tasa de envio|taxa de envio|biaya pengiriman|frais de livraison|versandkosten|spese di spedizione)\b",
+        r"(تهانينا|ربحت|رسوم الشحن)",
+        r"(बधाई|जीते|शिपिंग शुल्क)",
+        r"(おめでとう|当選|送料)",
+        r"(축하합니다|당첨|배송비)",
+        r"(поздравляем|выиграли|доставка)",
+        r"(恭喜|中奖|运费)",
+    ],
+    "urgency_bait": [
+        r"\b(urgente|ahora mismo|ultima oportunidad|ultimos? \d+ minutos|agora mesmo|segera|terbatas)\b",
+        r"\b(urgent|maintenant|sofort|letzte chance|subito|offerta limitata|offerta limitata|ultima chiamata|angebot endet)\b",
+        r"(عاجل|الان|الآن|خلال|عرض محدود)",
+        r"(तुरंत|अभी|अंतिम मौका|सीमित समय)",
+        r"(今すぐ|今だけ|限定|最後のチャンス|まもなく終了)",
+        r"(지금|긴급|마감|한정)",
+        r"(срочно|сейчас|последний шанс|ограниченное предложение)",
+        r"(立即|马上|限时|最后机会)",
+    ],
+    "fomo_trigger": [
+        r"\b(preventa|pre venda|se agota|se agotara|listing binance|va a subir|vai explodir|akan naik|akan meledak)\b",
+        r"\b(va exploser|sera epuise|wird explodieren|vorverkauf|esplodera|prevendita)\b",
+        r"(اكتتاب مسبق|قبل الادراج|ستنطلق|لا تفوت)",
+        r"(प्रीसेल|लिस्टिंग से पहले|मत चूको|100x)",
+        r"(爆上げ|上場前|プレセール|見逃すな)",
+        r"(상장 전|프리세일|놓치지 마세요|폭등)",
+        r"(пресейл|до листинга|взлетит|не упустите)",
+        r"(预售|上市前|暴涨|不要错过)",
+    ],
+    "loss_aversion_trigger": [
+        r"\b(perdera?s? acceso|perdera?s? sus fondos|perder seus fundos|perder acesso|kehilangan akses|kehilangan dana)\b",
+        r"\b(perdre acces|perdre vos fonds|zugriff verlieren|gelder verlieren|perdere accesso|perdere fondi)\b",
+        r"\b(perdera el acceso|perdera acceso|sonst wird ihr konto geschlossen|konto geschlossen)\b",
+        r"(ستفقد|ستفقد الوصول|ستفقد اموالك)",
+        r"(पहुंच खो देंगे|धन खो देंगे|खाता बंद)",
+        r"(アクセスを失う|資金を失う|アカウントが停止)",
+        r"(접근 권한.*잃|자금.*잃|계정.*정지)",
+        r"(потеряете доступ|потеряете средства)",
+        r"(失去访问权限|资金.*丢失|账号.*停用)",
+    ],
+    "social_proof_trigger": [
+        r"\b(miles de usuarios|millones de personas|todos se estan uniendo|milhares de pessoas|ribuan pengguna)\b",
+        r"\b(des milliers|tout le monde rejoint|tausende nutzer|alle treten bei|migliaia di utenti)\b",
+        r"(آلاف المستخدمين|الجميع ينضم)",
+        r"(हजारों लोग|सब जुड़ रहे हैं)",
+        r"(何千人|みんな参加)",
+        r"(수천 명|모두 참여)",
+        r"(тысячи пользователей|все присоединяются)",
+        r"(数千用户|大家都在加入)",
+    ],
+    "authority_impersonation": [
+        r"\b(soporte oficial|equipo de soporte|suporte oficial|equipe de suporte|dukungan resmi|tim dukungan)\b",
+        r"\b(support officiel|equipe de securite|offizieller support|sicherheitsteam|supporto ufficiale|team sicurezza)\b",
+        r"(الدعم الرسمي|فريق الدعم|فريق الامن|البنك)",
+        r"(आधिकारिक समर्थन|सहायता टीम|सुरक्षा टीम|बैंक)",
+        r"(公式サポート|セキュリティチーム|銀行)",
+        r"(공식 지원|보안팀|은행)",
+        r"(официальная поддержка|служба безопасности|банк)",
+        r"(官方支持|安全团队|银行)",
+    ],
+    "wallet_verification": [
+        r"\b(wallet|billetera|cartera|carteira|dompet|portefeuille|brieftasche|portafoglio).{0,50}\b(verificacion|verificacao|verifikasi|verification|verifizierung|verifica)\b",
+        r"\b(verificar|verifique|verifier|verifizieren|verifica).{0,50}\b(wallet|billetera|cartera|carteira|dompet|portefeuille|brieftasche|portafoglio)\b",
+        r"(محفظة.*تحقق|تحقق.*محفظة)",
+        r"(वॉलेट.*सत्यापन|वॉलेट.*वेरिफ)",
+        r"(ウォレット認証|ウォレット.*確認|ウォレットを接続)",
+        r"(지갑 인증|지갑.*확인)",
+        r"(проверка кошелька|кошелек.*провер)",
+        r"(钱包验证|钱包.*验证|连接钱包|授权交易)",
+    ],
+    "market_manipulation": [
+        r"\b(100x|x100|x5|gem alert|moonshot|airdrop|binance listing)\b",
+        r"\b(to the moon|va a la luna|vai para a lua|akan moon|vers la lune|zum mond|alla luna|coin prima|coin.*influencer)\b",
+        r"(الى القمر|ايردروب|بينانس)",
+        r"(चांद तक|एयरड्रॉप|बिनांस)",
+        r"(月まで|エアドロップ|バイナンス|無料トークン)",
+        r"(투더문|에어드랍|바이낸스)",
+        r"(туземун|эйрдроп|бинанс)",
+        r"(冲月|空投|币安|免费代币)",
+    ],
+    "credential_phishing": [
+        r"\b(cuenta bancaria|kata sandi|verifikasi keamanan|passwort|konto geschlossen|donnees bancaires)\b",
+        r"\b(informazioni bancarie|dati della carta|carte bancaire|datos de tarjeta|dados do cartao)\b",
+        r"(بيانات البطاقة|كلمة المرور|ادخل بيانات|أدخل بيانات)",
+        r"(पासवर्ड|कार्ड विवरण|लॉगिन विवरण)",
+        r"(パスワード|カード情報|ログイン情報)",
+        r"(비밀번호|카드 정보|로그인 정보)",
+        r"(пароль|данные карты|данные входа)",
+        r"(密码|银行卡信息|登录信息)",
+    ],
+}
+
+for _group_name, _patterns in MULTILINGUAL_SCAM_PATTERN_GROUPS.items():
+    SCAM_PATTERN_GROUPS.setdefault(_group_name, []).extend(_patterns)
+del _group_name, _patterns
 
 PSYCHOLOGICAL_TRIGGER_GROUPS = [
     "fomo_trigger",
@@ -301,6 +502,7 @@ STRONG_PRESENTATION_REASONS = {
     "LOSS_AVERSION_TRIGGER",
     "SOCIAL_PROOF_TRIGGER",
     "AUTHORITY_IMPERSONATION",
+    "CREDENTIAL_OR_PAYMENT_DATA_PHISHING",
     "COORDINATED_AMPLIFICATION_LANGUAGE",
 }
 
@@ -433,8 +635,21 @@ def fold_text_for_match(value: Any) -> str:
     return text.encode("ascii", "ignore").decode("ascii")
 
 
-def _pattern_count(text: str, patterns: List[str]) -> int:
-    return sum(1 for pattern in patterns if re.search(pattern, text, flags=re.IGNORECASE))
+def unicode_text_for_match(value: Any) -> str:
+    text = _clean_scalar(value).casefold().translate(TURKISH_CHAR_MAP)
+    text = unicodedata.normalize("NFKC", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _pattern_count(text: str, patterns: List[str], extra_text: Optional[str] = None) -> int:
+    haystacks = [text]
+    if extra_text and extra_text != text:
+        haystacks.append(extra_text)
+    return sum(
+        1
+        for pattern in patterns
+        if any(re.search(pattern, haystack, flags=re.IGNORECASE) for haystack in haystacks if haystack)
+    )
 
 
 def normalize_text(text: Any) -> str:
@@ -529,6 +744,7 @@ def compute_text_features(df: pd.DataFrame) -> pd.DataFrame:
     texts = df.get(TEXT_COL, pd.Series("", index=df.index)).fillna("").astype(str)
     stripped_texts = texts.str.strip()
     folded_texts = texts.apply(fold_text_for_match)
+    unicode_texts = texts.apply(unicode_text_for_match)
     normalized_texts = texts.apply(normalize_text)
     stats = [_token_stats(text) for text in texts.tolist()]
     features = pd.DataFrame(
@@ -583,7 +799,10 @@ def compute_text_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda value: 1.0 if re.search(r"([A-Za-z0-9])\1{4,}", value or "") else 0.0
     )
     for group_name, patterns in SCAM_PATTERN_GROUPS.items():
-        features[f"{group_name}_count"] = folded_texts.apply(lambda value, pats=patterns: _pattern_count(value, pats)).astype(float)
+        features[f"{group_name}_count"] = [
+            float(_pattern_count(folded, patterns, unicode_text))
+            for folded, unicode_text in zip(folded_texts.tolist(), unicode_texts.tolist())
+        ]
     scam_group_cols = [f"{group_name}_count" for group_name in SCAM_PATTERN_GROUPS]
     features["scam_signal_count"] = features[scam_group_cols].sum(axis=1)
     features["scam_signal_groups"] = features[scam_group_cols].gt(0).sum(axis=1).astype(float)
@@ -627,10 +846,20 @@ def score_content_features(features: pd.DataFrame) -> pd.Series:
         (features["phishing_threat_count"] > 0)
         | (features["prize_fee_count"] >= 2)
         | ((features["financial_bait_count"] > 0) & ((features["engagement_bait_count"] > 0) | (cta >= 0.35)))
+        | (
+            (features["financial_bait_count"] >= 2)
+            & (
+                (features["urgency_bait_count"] > 0)
+                | (features["fomo_trigger_count"] > 0)
+                | (features["market_manipulation_count"] > 0)
+                | (cta >= 0.20)
+            )
+        )
         | ((features["engagement_bait_count"] > 0) & (cta >= 0.50))
         | ((features["adult_or_leak_bait_count"] > 0) & ((features["engagement_bait_count"] > 0) | (features["urgency_bait_count"] > 0)))
         | ((features["health_miracle_count"] > 0) & (cta >= 0.20))
         | ((features["debt_relief_count"] > 0) & (cta >= 0.10))
+        | (features["credential_phishing_count"] > 0)
         | (features["wallet_verification_count"] > 0)
         | (features["trading_bot_bait_count"] > 0)
         | ((features["loss_aversion_trigger_count"] > 0) & (features["urgency_bait_count"] > 0))
@@ -671,6 +900,7 @@ def score_content_features(features: pd.DataFrame) -> pd.Series:
         | ((features["engagement_bait_count"] > 0) & (cta >= 0.25))
         | (features["political_mobilization_count"] > 0)
         | ((features["market_manipulation_count"] > 0) & (features["urgency_bait_count"] > 0))
+        | (features["credential_phishing_count"] > 0)
         | (features["fomo_trigger_count"] > 0)
         | (features["loss_aversion_trigger_count"] > 0)
         | (features["social_proof_trigger_count"] > 0)
@@ -733,6 +963,8 @@ def content_reason_codes(row: pd.Series) -> List[str]:
         reasons.append("SOCIAL_PROOF_TRIGGER")
     if row.get("authority_impersonation_count", 0) > 0:
         reasons.append("AUTHORITY_IMPERSONATION")
+    if row.get("credential_phishing_count", 0) > 0:
+        reasons.append("CREDENTIAL_OR_PAYMENT_DATA_PHISHING")
     if row.get("wallet_verification_count", 0) > 0:
         reasons.append("WALLET_VERIFICATION_BAIT")
     if row.get("trading_bot_bait_count", 0) > 0:
@@ -4026,6 +4258,60 @@ def smoke_test() -> None:
     )
     assert phishing_prediction["label"] == "Manipulative"
     assert "PHISHING_URGENCY_THREAT" in phishing_prediction["top_reasons"]
+    multilingual_cases = [
+        (
+            "Su cuenta sera suspendida en 24 horas. Verifique su billetera ahora.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "Sua conta sera suspensa em 24 horas. Verifique sua carteira agora.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "Akun Anda ditangguhkan dalam 24 jam. Verifikasi dompet sekarang.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "आपका खाता निलंबित होगा 24 घंटे में। वॉलेट सत्यापन अभी पूरा करें।",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "حسابك سيتم تعليقه خلال 24 ساعة. تحقق من محفظة MetaMask الآن.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "Votre compte sera suspendu dans 24 heures. Verification du portefeuille requise.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "Ihr Konto wird gesperrt in 24 Stunden. Wallet Verifizierung ist erforderlich.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "アカウントが停止されます。24時間以内にウォレット認証を完了してください。",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "계정이 정지됩니다. 24시간 내에 지갑 인증을 완료하세요.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "Ваш аккаунт будет заблокирован через 24 часа. Пройдите проверка кошелька.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "Il tuo conto sara sospeso entro 24 ore. Verifica il portafoglio wallet ora.",
+            "PHISHING_URGENCY_THREAT",
+        ),
+        (
+            "账号将暂停。请在24小时内完成钱包验证。",
+            "PHISHING_URGENCY_THREAT",
+        ),
+    ]
+    for multilingual_text, expected_reason in multilingual_cases:
+        multilingual_prediction = predict_live(multilingual_text, context=context)
+        assert multilingual_prediction["risk_score"] >= RISK_THRESHOLD, multilingual_prediction
+        assert expected_reason in multilingual_prediction["top_reasons"], multilingual_prediction
     batch_predictions = predict_dataframe(
         pd.DataFrame(
             {
