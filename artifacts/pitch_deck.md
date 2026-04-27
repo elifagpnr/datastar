@@ -75,7 +75,7 @@
 - High-risk boş olmayan oran: 98.3%
 - Güçlü reason destekli High oranı: 82.9%
 - Sunuma uygun güçlü High örnek: 3,746
-- Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`.
+- Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`, `feature_importance_proxy.png`, `risk_component_contribution.png`.
 - Kampanya dönemi kanıtı: `temporal_burst_windows.csv` ve `temporal_burst_windows.png`.
 - Etiket sağlanmadığı için bunlar proxy kanıt metrikleri ve senaryo kontrolleridir; etiketli performans metriği iddiası değildir.
 
@@ -107,4 +107,6 @@
 - `live_inference_benchmark.png`: Sentetik canlı test senaryolarında modelin risk skorlarını eşiklerle birlikte gösterir.
 - `coordination_confidence_bubble.png`: Cluster güveni, zaman penceresi, cluster boyutu ve coordination risk ilişkisini gösterir.
 - `evidence_quality_summary.png`: High-risk kararların boş olmayan metin, güçlü reason, içerik/author/coordination desteği gibi kalite boyutlarını özetler.
+- `feature_importance_proxy.png`: Etiketsiz ortamda klasik feature importance yerine skor formülüne göre katkı yapan sinyalleri gösterir.
+- `risk_component_contribution.png`: Risk bandlarına göre content, author, coordination ve rule-floor katkılarını gösterir.
 - `case_studies.md`: Finansal scam, koordinasyon ve psikolojik tetikleyici örneklerini gerçek skorlanmış satırlardan hikayeleştirir.

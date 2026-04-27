@@ -38,6 +38,7 @@ python datathon_pipeline.py predict-csv jury_inputs/jury_texts.csv --output arti
 
 CSV handling:
 
+- Jury format `test_id,text` is supported directly. The `text` column is scored automatically, and `test_id` is preserved in the prediction output.
 - If the file has an `original_text` column, it is used automatically.
 - If the file has a single text column, it is used automatically.
 - If the file has no header, add `--no-header`.
@@ -45,7 +46,25 @@ CSV handling:
 - If the text column has a different name, pass `--text-column "column_name"`.
 - If the CSV uses semicolon delimiters, pass `--sep ";"`.
 
-Output includes `label`, `risk_band`, `risk_score`, `organic_score`, `top_reasons`, `nlp_text_risk`, and source row/column metadata.
+The main `--output` file is the jury submission CSV with exactly three columns:
+
+```csv
+test_id,text,label
+```
+
+Here `label` is a 0-1 manipulative risk score: `0` means more organic, `1` means more manipulative. The detailed inference output is written separately as `<output_stem>_detailed.csv` and includes `risk_band`, `risk_score`, `organic_score`, `top_reasons`, `nlp_text_risk`, and source row/column metadata.
+
+For every batch CSV run, the pipeline also writes a batch-level analysis bundle next to the prediction CSV:
+
+- `<output_stem>_detailed.csv`: detailed inference/debug table
+- `<output>.summary.json`: machine-readable summary
+- `<output_stem>_summary.csv`: key metrics such as average/median/P90 risk score and band shares
+- `<output_stem>_summary.md`: presentation-friendly batch report
+- `<output_stem>_top_risk_examples.csv`: highest-risk rows for quick inspection
+- `<output_stem>_risk_band_distribution.png`
+- `<output_stem>_risk_score_histogram.png`
+- `<output_stem>_reason_code_breakdown.png`
+- `<output_stem>_psychological_trigger_breakdown.png`
 
 Notebook workflow for the presentation:
 
@@ -58,7 +77,18 @@ Notebook workflow for the presentation:
 JURY_CSV_FILENAME = "jury_texts.csv"
 ```
 
-5. Run the cell. It writes `artifacts/jury_predictions_<file_name>.csv` and displays the risk-band summary plus the first scored rows.
+5. Run the cell. It writes `artifacts/jury_predictions_<file_name>.csv` as the 3-column submission file and displays the risk-band summary plus the first scored rows.
+   The same cell also displays batch-level averages and the generated visual analysis charts.
+
+For the expected jury CSV format:
+
+```csv
+test_id,text
+1,"BUY NOW!!! FREE FREE FREE #deal #promo"
+2,"The city council published meeting notes."
+```
+
+leave `TEXT_COLUMN = None` and `CSV_HAS_HEADER = True`; no other setting is needed.
 
 If your system Python says `externally-managed-environment`, use the virtualenv commands above. In VS Code/Jupyter, select `.venv/bin/python` as the notebook kernel before running `ads.ipynb`.
 
@@ -95,6 +125,9 @@ The pipeline writes these files under `artifacts/`:
 - `temporal_burst_windows.csv`
 - `language_manipulative_share.csv`
 - `case_studies.md`
+- `feature_contribution_summary.csv`
+- `feature_contribution_summary.md`
+- `risk_component_contribution_summary.csv`
 - `nlp_text_model.npz`
 - `nlp_text_model_metadata.json`
 - `nlp_pseudo_label_training_summary.csv`
@@ -104,6 +137,8 @@ The pipeline writes these files under `artifacts/`:
 - `hourly_suspicious_share.png`
 - `temporal_burst_windows.png`
 - `risk_score_histogram.png`
+- `feature_importance_proxy.png`
+- `risk_component_contribution.png`
 - `platform_normalized_risk.png`
 - `top_risk_authors.png`
 - `run_summary.json`
@@ -125,6 +160,7 @@ Additional explainability artifacts:
 - platform-normalized risk: compares each platform's Review + High rate against the dataset average
 - temporal burst windows: flags hourly Review + High or High share z-score spikes as campaign-burst evidence without changing row labels
 - case studies: summarizes concrete jury-facing examples from real scored rows
+- feature contribution summary: formula-based proxy importance showing which engineered signals contribute most to High-risk scores
 
 Risk bands:
 

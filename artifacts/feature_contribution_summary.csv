@@ -1,0 +1,16 @@
+family,feature,contribution_type,active_rows,active_share,mean_contribution_all,mean_contribution_review_high,mean_contribution_high,total_contribution,explanation
+Content floor,High-risk lure floor,rule floor lift,5332,0.02666,0.013437012898309455,0.24039519471760618,0.49044519752211213,2687.4025796618907,"Phishing, wallet verification, trading bot, financial bait, or similar high-risk combinations."
+Content,Scam/manipulation pattern groups,weighted additive,31970,0.15985,0.009896000000000002,0.07277377240841777,0.09935783879539417,1979.2000000000003,"Finance, phishing, prize, urgency, FOMO, authority, and related pattern groups."
+Content,Token repetition,weighted additive,132040,0.6602,0.017171676526272835,0.02657421987396199,0.029376294061978055,3434.3353052545667,Repeated tokens or one dominant token.
+Content,Link/hashtag/mention density,weighted additive,27240,0.1362,0.01373693185108635,0.022222400338764128,0.02848938393190592,2747.38637021727,"Dense external-link, hashtag, or mention usage."
+Content,Extreme sentiment,weighted additive,197951,0.989755,0.024534328312345633,0.02572543903255471,0.0262360847837449,4906.865662469127,Very high absolute sentiment value from dataset metadata.
+Content,Call-to-action density,weighted additive,17813,0.089065,0.0015410469743918592,0.008588093688065264,0.013165972028869528,308.2093948783718,"Click, join, follow, DM, buy, and similar action language."
+Content floor,Empty text floor,rule floor lift,153,0.000765,0.0005455194791399247,0.010629763818003209,0.012318562224643519,109.10389582798494,Empty/whitespace-only text is treated as a data/content anomaly.
+Content,Punctuation burst,weighted additive,48330,0.24165,0.005975941079246726,0.005464892006885736,0.00560878704736026,1195.1882158493452,Excessive punctuation such as !!! or ???.
+Content,Very long text,weighted additive,3394,0.01697,0.0005488649999999999,0.004858954373763416,0.005111432854125503,109.773,Extremely long text can indicate copied/promotional payloads.
+Content,Short/tiny text,weighted additive,15890,0.07945,0.006104833333333334,0.00492498051441933,0.004991511662237969,1220.9666666666667,Very short text base signal; calibrated so non-empty short replies remain low evidence.
+Content floor,Repeated character floor,rule floor lift,1623,0.008115,0.0038024479923863233,0.06941335533126733,0.002197290673374821,760.4895984772646,Long repeated character runs such as aaaaa or 11111.
+Content,Uppercase intensity,weighted additive,7770,0.03885,0.0027252221123776075,0.006223259149748777,0.0016447182453009053,545.0444224755215,Excessive uppercase emphasis.
+Content floor,Stacked spam floor,rule floor lift,11,5.5e-05,2.5837494289484557e-05,0.0005034585792962696,0.0011442645832366943,5.167498857896911,"Dense links, punctuation, and CTA together force a high content-risk floor."
+Content floor,Political amplification floor,rule floor lift,7,3.5e-05,1.7510149962283578e-05,0.0003411954396391967,0.0007754716546626916,3.5020299924567153,Political mobilization combined with urgency or CTA.
+Content floor,Review lure floor,rule floor lift,3448,0.01724,0.005735194455231897,0.09808232998388143,0.00024016050621708236,1147.0388910463794,Multiple weaker manipulation groups push content into Review territory.

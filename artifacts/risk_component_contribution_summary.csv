@@ -1,0 +1,7 @@
+family,feature,contribution_type,active_rows,active_share,mean_contribution_all,mean_contribution_review_high,mean_contribution_high,total_contribution,explanation
+Final risk component,Content component,normalized weighted component,199567,0.997835,0.09609842050030164,0.5469305079174502,0.677486698197644,19219.684100060327,Content-risk contribution after metadata availability renormalization.
+Final risk component,Author component,normalized weighted component,32061,0.160305,0.020036131117175872,0.05952659050904613,0.044039935321009874,4007.2262234351747,Author behavior contribution when enough author metadata is available.
+Final risk component,Coordination component,normalized weighted component,108,0.00054,0.00017549113189082148,0.002247718786726065,0.0030545792104652303,35.0982263781643,Narrative cluster contribution when coordination evidence exists.
+Final risk floor,High coordination floor,rule floor lift,15,7.5e-05,9.008449102792492e-06,0.00017553486170679062,0.0003989570018951503,1.8016898205584986,Coordination risk >= 0.80 lifts final risk to at least 0.68.
+Final risk floor,Coordination + content floor,rule floor lift,13,6.5e-05,4.461806760807389e-06,8.694089557302004e-05,0.00019759994511990206,0.8923613521614777,Coordination risk >= 0.65 with content support lifts final risk to at least 0.66.
+Final risk floor,Author + support floor,rule floor lift,6,3e-05,3.4527645529342956e-07,6.727912223176725e-06,1.5291251341604498e-05,0.06905529105868591,High author risk with content or coordination support lifts final risk to at least 0.66.

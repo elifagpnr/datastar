@@ -29,6 +29,7 @@ NLP_MIN_DOCS_PER_CLASS = 50
 NLP_RANDOM_SEED = 42
 
 TEXT_COL = "original_text"
+TEST_ID_COL = "test_id"
 KEYWORDS_COL = "english_keywords"
 SENTIMENT_COL = "sentiment"
 AUTHOR_COL = "author_hash"
@@ -46,6 +47,14 @@ TEXT_COLUMN_CANDIDATES = {
     "tweet",
     "caption",
     "comment",
+}
+
+ID_COLUMN_CANDIDATES = {
+    TEST_ID_COL,
+    "id",
+    "row_id",
+    "case_id",
+    "sample_id",
 }
 
 METADATA_COLUMN_CANDIDATES = {
@@ -2093,6 +2102,8 @@ def build_marketing_scorecard(
             "| `live_inference_benchmark.png` | Sentetik canlı inference senaryolarının risk skorlarını eşiklerle birlikte gösterir. | Jürinin gizli metin testine hazır olduğumuzu göstermek için kullanılır. |",
             "| `coordination_confidence_bubble.png` | Coordination cluster'larının zaman penceresi, güven skoru, boyut ve coordination risk ilişkisini gösterir. | Koordineli davranış tespitinin sadece metin değil, zaman ve author yayılımıyla desteklendiğini anlatır. |",
             "| `evidence_quality_summary.png` | High-risk kararların ne kadarının boş olmayan, güçlü reason destekli, içerik/author/coordination destekli olduğunu gösterir. | High-risk karar kalitesini ve savunulabilirliği özetler. |",
+            "| `feature_importance_proxy.png` | Etiket olmadığı için klasik feature importance yerine, skor formülüne göre High-risk satırlarda en çok katkı yapan engineered sinyalleri gösterir. | Hangi feature engineering kararlarının skoru taşıdığını dürüst ve açıklanabilir şekilde anlatır. |",
+            "| `risk_component_contribution.png` | Low/Review/High bandlarında content, author, coordination ve rule-floor katkılarının ortalama dağılımını gösterir. | Metadata ve text sinyallerinin final skorda nasıl birleştiğini görselleştirir. |",
             "| `case_studies.md` | Gerçek skorlanmış satırlardan seçilen 3 savunulabilir hikayeyi özetler. | Jürinin 'somut örnek göster' sorusuna doğrudan cevap olarak kullanılır. |",
             "",
             "Önerilen konumlandırma: Etiketsiz sosyal medya verisi için açıklanabilir, seçici ve canlı inference'a hazır risk skorlama sistemi.",
@@ -2309,6 +2320,359 @@ def build_marketing_plots(
     created.append(str(path))
 
     return created
+
+
+def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(default, index=frame.index, dtype=float)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(default).astype(float)
+
+
+def _feature_contribution_rows(
+    scored: pd.DataFrame,
+    contribution_items: List[Tuple[str, str, str, pd.Series, str]],
+) -> pd.DataFrame:
+    if scored.empty:
+        return pd.DataFrame(
+            columns=[
+                "family",
+                "feature",
+                "contribution_type",
+                "active_rows",
+                "active_share",
+                "mean_contribution_all",
+                "mean_contribution_review_high",
+                "mean_contribution_high",
+                "total_contribution",
+                "explanation",
+            ]
+        )
+
+    review_high = scored["risk_band"].isin(["Review", "High"]) if "risk_band" in scored else pd.Series(False, index=scored.index)
+    high = scored["risk_band"].eq("High") if "risk_band" in scored else pd.Series(False, index=scored.index)
+    rows: List[Dict[str, Any]] = []
+    for family, feature, contribution_type, values, explanation in contribution_items:
+        contributions = pd.to_numeric(values, errors="coerce").fillna(0.0).clip(lower=0.0)
+        active = contributions > 1e-9
+        rows.append(
+            {
+                "family": family,
+                "feature": feature,
+                "contribution_type": contribution_type,
+                "active_rows": int(active.sum()),
+                "active_share": float(active.mean()) if len(active) else 0.0,
+                "mean_contribution_all": float(contributions.mean()) if len(contributions) else 0.0,
+                "mean_contribution_review_high": float(contributions[review_high].mean()) if review_high.any() else 0.0,
+                "mean_contribution_high": float(contributions[high].mean()) if high.any() else 0.0,
+                "total_contribution": float(contributions.sum()),
+                "explanation": explanation,
+            }
+        )
+    return pd.DataFrame(rows).sort_values(
+        ["mean_contribution_high", "mean_contribution_review_high", "total_contribution"],
+        ascending=False,
+    )
+
+
+def build_feature_contribution_artifacts(
+    scored: pd.DataFrame,
+    artifacts_dir: Path,
+    make_plots: bool = True,
+) -> Dict[str, Any]:
+    artifacts_dir = Path(artifacts_dir)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    if scored.empty:
+        return {}
+
+    char_len = _numeric_column(scored, "stripped_char_len")
+    word_count = _numeric_column(scored, "word_count")
+    empty = _numeric_column(scored, "empty_text") >= 1.0
+    short_or_tiny = pd.Series(np.where(char_len < 24, _clip01((24.0 - char_len) / 24.0), 0.0), index=scored.index)
+    very_long = pd.Series(_clip01((char_len - 700.0) / 1300.0), index=scored.index)
+    repetition_raw = pd.Series(
+        _clip01(np.maximum(_numeric_column(scored, "repetition_ratio"), _numeric_column(scored, "max_token_share") - 0.15)),
+        index=scored.index,
+    )
+    repetition = pd.Series(np.where(word_count >= 3, repetition_raw, 0.0), index=scored.index)
+    link_density = pd.Series(_clip01(_numeric_column(scored, "link_signal_density") * 5.0), index=scored.index)
+    caps = pd.Series(_clip01((_numeric_column(scored, "uppercase_ratio") - 0.35) / 0.45), index=scored.index)
+    punctuation = pd.Series(_clip01(_numeric_column(scored, "punctuation_density") * 18.0), index=scored.index)
+    sentiment_extreme = pd.Series(np.power(_numeric_column(scored, "sentiment_abs"), 1.4), index=scored.index)
+    cta = pd.Series(
+        _clip01(_numeric_column(scored, "call_to_action_count") / np.maximum(word_count, 1) * 7.0),
+        index=scored.index,
+    )
+    scam_signal = pd.Series(_clip01(_numeric_column(scored, "scam_signal_count") / 4.0), index=scored.index)
+    scam_groups = _numeric_column(scored, "scam_signal_groups")
+
+    base_content = (
+        0.20 * short_or_tiny
+        + 0.10 * very_long
+        + 0.20 * repetition
+        + 0.17 * link_density
+        + 0.10 * caps
+        + 0.08 * punctuation
+        + 0.10 * sentiment_extreme
+        + 0.05 * cta
+        + 0.20 * scam_signal
+    )
+    current = base_content.copy()
+    stacked_spam = (link_density >= 0.70) & (punctuation >= 0.50) & (cta >= 0.70)
+    after_stacked = pd.Series(np.where(stacked_spam, np.maximum(current, 0.82), current), index=scored.index)
+    stacked_lift = after_stacked - current
+    current = after_stacked
+
+    high_risk_lure = (
+        (_numeric_column(scored, "phishing_threat_count") > 0)
+        | (_numeric_column(scored, "prize_fee_count") >= 2)
+        | ((_numeric_column(scored, "financial_bait_count") > 0) & ((_numeric_column(scored, "engagement_bait_count") > 0) | (cta >= 0.35)))
+        | ((_numeric_column(scored, "engagement_bait_count") > 0) & (cta >= 0.50))
+        | ((_numeric_column(scored, "adult_or_leak_bait_count") > 0) & ((_numeric_column(scored, "engagement_bait_count") > 0) | (_numeric_column(scored, "urgency_bait_count") > 0)))
+        | ((_numeric_column(scored, "health_miracle_count") > 0) & (cta >= 0.20))
+        | ((_numeric_column(scored, "debt_relief_count") > 0) & (cta >= 0.10))
+        | (_numeric_column(scored, "wallet_verification_count") > 0)
+        | (_numeric_column(scored, "trading_bot_bait_count") > 0)
+        | ((_numeric_column(scored, "loss_aversion_trigger_count") > 0) & (_numeric_column(scored, "urgency_bait_count") > 0))
+        | (
+            (_numeric_column(scored, "authority_impersonation_count") > 0)
+            & (
+                (_numeric_column(scored, "urgency_bait_count") > 0)
+                | (_numeric_column(scored, "loss_aversion_trigger_count") > 0)
+                | (_numeric_column(scored, "phishing_threat_count") > 0)
+                | (_numeric_column(scored, "wallet_verification_count") > 0)
+                | (cta >= 0.20)
+            )
+        )
+        | (
+            (_numeric_column(scored, "fomo_trigger_count") > 0)
+            & (
+                (_numeric_column(scored, "financial_bait_count") > 0)
+                | (_numeric_column(scored, "market_manipulation_count") > 0)
+                | (_numeric_column(scored, "engagement_bait_count") > 0)
+            )
+            & ((_numeric_column(scored, "urgency_bait_count") > 0) | (cta >= 0.20))
+        )
+        | (
+            (_numeric_column(scored, "market_manipulation_count") > 0)
+            & (
+                (_numeric_column(scored, "financial_bait_count") > 0)
+                | (_numeric_column(scored, "engagement_bait_count") > 0)
+                | (_numeric_column(scored, "urgency_bait_count") > 0)
+            )
+        )
+    )
+    after_high_lure = pd.Series(np.where(high_risk_lure, np.maximum(current, 0.72), current), index=scored.index)
+    high_lure_lift = after_high_lure - current
+    current = after_high_lure
+
+    political_high = (
+        ((_numeric_column(scored, "political_mobilization_count") >= 2) & ((_numeric_column(scored, "urgency_bait_count") > 0) | (cta >= 0.20)))
+        | ((_numeric_column(scored, "political_mobilization_count") > 0) & (cta >= 0.35))
+    )
+    after_political = pd.Series(np.where(political_high, np.maximum(current, 0.66), current), index=scored.index)
+    political_lift = after_political - current
+    current = after_political
+
+    review_lure = (
+        (scam_groups >= 2)
+        | ((_numeric_column(scored, "engagement_bait_count") > 0) & (cta >= 0.25))
+        | (_numeric_column(scored, "political_mobilization_count") > 0)
+        | ((_numeric_column(scored, "market_manipulation_count") > 0) & (_numeric_column(scored, "urgency_bait_count") > 0))
+        | (_numeric_column(scored, "fomo_trigger_count") > 0)
+        | (_numeric_column(scored, "loss_aversion_trigger_count") > 0)
+        | (_numeric_column(scored, "social_proof_trigger_count") > 0)
+        | (_numeric_column(scored, "authority_impersonation_count") > 0)
+    )
+    after_review = pd.Series(np.where(review_lure, np.maximum(current, 0.50), current), index=scored.index)
+    review_lure_lift = after_review - current
+    current = after_review
+
+    after_empty = pd.Series(np.where(empty, np.maximum(current, 0.92), current), index=scored.index)
+    empty_lift = after_empty - current
+    current = after_empty
+    after_repeated_char = pd.Series(
+        np.where(_numeric_column(scored, "repeated_char_run") > 0, np.maximum(current, 0.55), current),
+        index=scored.index,
+    )
+    repeated_char_lift = after_repeated_char - current
+
+    content_items: List[Tuple[str, str, str, pd.Series, str]] = [
+        ("Content", "Short/tiny text", "weighted additive", 0.20 * short_or_tiny, "Very short text base signal; calibrated so non-empty short replies remain low evidence."),
+        ("Content", "Very long text", "weighted additive", 0.10 * very_long, "Extremely long text can indicate copied/promotional payloads."),
+        ("Content", "Token repetition", "weighted additive", 0.20 * repetition, "Repeated tokens or one dominant token."),
+        ("Content", "Link/hashtag/mention density", "weighted additive", 0.17 * link_density, "Dense external-link, hashtag, or mention usage."),
+        ("Content", "Uppercase intensity", "weighted additive", 0.10 * caps, "Excessive uppercase emphasis."),
+        ("Content", "Punctuation burst", "weighted additive", 0.08 * punctuation, "Excessive punctuation such as !!! or ???."),
+        ("Content", "Extreme sentiment", "weighted additive", 0.10 * sentiment_extreme, "Very high absolute sentiment value from dataset metadata."),
+        ("Content", "Call-to-action density", "weighted additive", 0.05 * cta, "Click, join, follow, DM, buy, and similar action language."),
+        ("Content", "Scam/manipulation pattern groups", "weighted additive", 0.20 * scam_signal, "Finance, phishing, prize, urgency, FOMO, authority, and related pattern groups."),
+        ("Content floor", "Stacked spam floor", "rule floor lift", stacked_lift, "Dense links, punctuation, and CTA together force a high content-risk floor."),
+        ("Content floor", "High-risk lure floor", "rule floor lift", high_lure_lift, "Phishing, wallet verification, trading bot, financial bait, or similar high-risk combinations."),
+        ("Content floor", "Political amplification floor", "rule floor lift", political_lift, "Political mobilization combined with urgency or CTA."),
+        ("Content floor", "Review lure floor", "rule floor lift", review_lure_lift, "Multiple weaker manipulation groups push content into Review territory."),
+        ("Content floor", "Empty text floor", "rule floor lift", empty_lift, "Empty/whitespace-only text is treated as a data/content anomaly."),
+        ("Content floor", "Repeated character floor", "rule floor lift", repeated_char_lift, "Long repeated character runs such as aaaaa or 11111."),
+    ]
+
+    content_summary = _feature_contribution_rows(scored, content_items)
+    content_summary_path = artifacts_dir / "feature_contribution_summary.csv"
+    content_summary.to_csv(content_summary_path, index=False)
+
+    content_weight = 0.35
+    author_weight = 0.30
+    coordination_weight = 0.35
+    author_sample_count = _numeric_column(scored, "author_post_count_sample")
+    author_full_count = _numeric_column(scored, "author_post_count_full")
+    author_available = (
+        scored.get(AUTHOR_COL, pd.Series("", index=scored.index)).fillna("").astype(str).str.len().gt(0)
+        & ((author_sample_count >= 3) | (author_full_count >= 5))
+    )
+    coord_available = _numeric_column(scored, "coordination_risk") > 0
+    denominator = pd.Series(content_weight, index=scored.index, dtype=float)
+    denominator += np.where(author_available, author_weight, 0.0)
+    denominator += np.where(coord_available, coordination_weight, 0.0)
+    content_component = content_weight * _numeric_column(scored, "content_risk") / denominator
+    author_component = pd.Series(
+        np.where(author_available, author_weight * _numeric_column(scored, "author_risk") / denominator, 0.0),
+        index=scored.index,
+    )
+    coordination_component = pd.Series(
+        np.where(coord_available, coordination_weight * _numeric_column(scored, "coordination_risk") / denominator, 0.0),
+        index=scored.index,
+    )
+    combined = content_component + author_component + coordination_component
+    coord = _numeric_column(scored, "coordination_risk")
+    author = _numeric_column(scored, "author_risk")
+    content_risk = _numeric_column(scored, "content_risk")
+    after_coord_high = pd.Series(np.where(coord >= 0.80, np.maximum(combined, 0.68), combined), index=scored.index)
+    coord_high_lift = after_coord_high - combined
+    combined = after_coord_high
+    after_coord_content = pd.Series(np.where((coord >= 0.65) & (content_risk >= 0.35), np.maximum(combined, 0.66), combined), index=scored.index)
+    coord_content_lift = after_coord_content - combined
+    combined = after_coord_content
+    after_author_floor = pd.Series(np.where((author >= 0.80) & ((content_risk >= 0.35) | (coord >= 0.35)), np.maximum(combined, 0.66), combined), index=scored.index)
+    author_floor_lift = after_author_floor - combined
+
+    component_items: List[Tuple[str, str, str, pd.Series, str]] = [
+        ("Final risk component", "Content component", "normalized weighted component", content_component, "Content-risk contribution after metadata availability renormalization."),
+        ("Final risk component", "Author component", "normalized weighted component", author_component, "Author behavior contribution when enough author metadata is available."),
+        ("Final risk component", "Coordination component", "normalized weighted component", coordination_component, "Narrative cluster contribution when coordination evidence exists."),
+        ("Final risk floor", "High coordination floor", "rule floor lift", coord_high_lift, "Coordination risk >= 0.80 lifts final risk to at least 0.68."),
+        ("Final risk floor", "Coordination + content floor", "rule floor lift", coord_content_lift, "Coordination risk >= 0.65 with content support lifts final risk to at least 0.66."),
+        ("Final risk floor", "Author + support floor", "rule floor lift", author_floor_lift, "High author risk with content or coordination support lifts final risk to at least 0.66."),
+    ]
+    component_summary = _feature_contribution_rows(scored, component_items)
+    component_summary_path = artifacts_dir / "risk_component_contribution_summary.csv"
+    component_summary.to_csv(component_summary_path, index=False)
+
+    md_path = artifacts_dir / "feature_contribution_summary.md"
+    top_rows = content_summary.head(12).copy()
+    component_rows = component_summary.copy()
+    md_lines = [
+        "# Feature Contribution Summary",
+        "",
+        "This is a formula-based proxy contribution report, not supervised feature importance. There are no ground-truth labels, so the numbers summarize how much each engineered signal contributes to the current risk scoring formula.",
+        "",
+        "## Top Feature Contributions Among High-Risk Rows",
+        *_markdown_table(
+            [
+                {
+                    "feature": row["feature"],
+                    "family": row["family"],
+                    "mean_high": f"{row['mean_contribution_high']:.4f}",
+                    "active_share": f"{row['active_share']:.2%}",
+                    "type": row["contribution_type"],
+                }
+                for _, row in top_rows.iterrows()
+            ],
+            ["feature", "family", "mean_high", "active_share", "type"],
+        ),
+        "",
+        "## Final Risk Component Contributions",
+        *_markdown_table(
+            [
+                {
+                    "feature": row["feature"],
+                    "mean_all": f"{row['mean_contribution_all']:.4f}",
+                    "mean_high": f"{row['mean_contribution_high']:.4f}",
+                    "active_share": f"{row['active_share']:.2%}",
+                }
+                for _, row in component_rows.iterrows()
+            ],
+            ["feature", "mean_all", "mean_high", "active_share"],
+        ),
+        "",
+        "## Interpretation Note",
+        "High values mean the feature frequently and materially contributes to the rule-based risk score. They do not prove causal predictive power against ground-truth labels.",
+    ]
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    plot_paths: List[str] = []
+    if make_plots and importlib.util.find_spec("matplotlib") is not None:
+        import matplotlib.pyplot as plt
+
+        plot_data = content_summary.sort_values("mean_contribution_high", ascending=False).head(14)
+        fig, ax = plt.subplots(figsize=(11, 7))
+        if not plot_data.empty:
+            labels = plot_data["feature"].tolist()[::-1]
+            values = plot_data["mean_contribution_high"].tolist()[::-1]
+            ax.barh(labels, values, color="#7c3aed")
+            ax.set_xlabel("Mean contribution among High-risk rows")
+        else:
+            ax.text(0.5, 0.5, "No feature contributions available", ha="center", va="center")
+            ax.set_axis_off()
+        ax.set_title("Proxy Feature Importance: Formula Contribution to High-Risk Scores")
+        fig.tight_layout()
+        path = artifacts_dir / "feature_importance_proxy.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        plot_paths.append(str(path))
+
+        component_plot = pd.DataFrame(
+            {
+                "risk_band": scored.get("risk_band", pd.Series("Unknown", index=scored.index)).fillna("Unknown"),
+                "Content": content_component,
+                "Author": author_component,
+                "Coordination": coordination_component,
+                "Rule floors": coord_high_lift + coord_content_lift + author_floor_lift,
+            }
+        )
+        component_plot = component_plot.groupby("risk_band")[["Content", "Author", "Coordination", "Rule floors"]].mean()
+        component_plot = component_plot.reindex(["Low", "Review", "High"]).dropna(how="all")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        if not component_plot.empty:
+            bottom = np.zeros(len(component_plot))
+            colors = {
+                "Content": "#ef4444",
+                "Author": "#7c3aed",
+                "Coordination": "#2563eb",
+                "Rule floors": "#f97316",
+            }
+            x = np.arange(len(component_plot.index))
+            for column in component_plot.columns:
+                values = component_plot[column].fillna(0.0).values
+                ax.bar(x, values, bottom=bottom, label=column, color=colors[column])
+                bottom += values
+            ax.set_xticks(x)
+            ax.set_xticklabels(component_plot.index.tolist())
+            ax.set_ylabel("Mean final risk contribution")
+            ax.legend()
+        else:
+            ax.text(0.5, 0.5, "No component contributions available", ha="center", va="center")
+            ax.set_axis_off()
+        ax.set_title("Final Risk Component Contribution by Risk Band")
+        fig.tight_layout()
+        path = artifacts_dir / "risk_component_contribution.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        plot_paths.append(str(path))
+
+    return {
+        "feature_contribution_summary_csv": str(content_summary_path),
+        "risk_component_contribution_summary_csv": str(component_summary_path),
+        "feature_contribution_summary_md": str(md_path),
+        "feature_contribution_plots": plot_paths,
+    }
 
 
 def build_marketing_artifacts(
@@ -2687,7 +3051,7 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 
 ## 9. Kanıt Scorecard
 {marketing_lines}
-- Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`.
+- Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`, `feature_importance_proxy.png`, `risk_component_contribution.png`.
 - Kampanya dönemi kanıtı: `temporal_burst_windows.csv` ve `temporal_burst_windows.png`.
 - Etiket sağlanmadığı için bunlar proxy kanıt metrikleri ve senaryo kontrolleridir; etiketli performans metriği iddiası değildir.
 
@@ -2719,6 +3083,8 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 - `live_inference_benchmark.png`: Sentetik canlı test senaryolarında modelin risk skorlarını eşiklerle birlikte gösterir.
 - `coordination_confidence_bubble.png`: Cluster güveni, zaman penceresi, cluster boyutu ve coordination risk ilişkisini gösterir.
 - `evidence_quality_summary.png`: High-risk kararların boş olmayan metin, güçlü reason, içerik/author/coordination desteği gibi kalite boyutlarını özetler.
+- `feature_importance_proxy.png`: Etiketsiz ortamda klasik feature importance yerine skor formülüne göre katkı yapan sinyalleri gösterir.
+- `risk_component_contribution.png`: Risk bandlarına göre content, author, coordination ve rule-floor katkılarını gösterir.
 - `case_studies.md`: Finansal scam, koordinasyon ve psikolojik tetikleyici örneklerini gerçek skorlanmış satırlardan hikayeleştirir.
 """
     path = artifacts_dir / "pitch_deck.md"
@@ -2771,6 +3137,12 @@ def run_pipeline(
         make_plots=make_plots,
     )
     plot_paths.extend(marketing_plot_paths)
+    feature_contribution_summary = build_feature_contribution_artifacts(
+        scored,
+        artifacts_dir,
+        make_plots=make_plots,
+    )
+    plot_paths.extend(feature_contribution_summary.get("feature_contribution_plots", []))
     case_studies_path = build_case_studies(scored, artifacts_dir)
 
     summary: Dict[str, Any] = {
@@ -2783,6 +3155,7 @@ def run_pipeline(
         "case_studies_path": str(case_studies_path),
         **table_summary,
         **marketing_summary,
+        **feature_contribution_summary,
     }
     if nlp_model is not None:
         summary["nlp_text_model"] = nlp_model.get("metadata", {})
@@ -3023,11 +3396,299 @@ def _cell_value(row: pd.Series, column: Optional[Any], fallback: Optional[str] =
     return value if value else fallback
 
 
+def _count_semicolon_values(values: pd.Series) -> pd.Series:
+    counts: Counter[str] = Counter()
+    for value in values.fillna("").astype(str):
+        for item in split_reason_codes(value):
+            counts[item] += 1
+    return pd.Series(counts, dtype=int).sort_values(ascending=False)
+
+
+def _markdown_table(rows: List[Dict[str, Any]], columns: List[str]) -> List[str]:
+    if not rows:
+        return ["No rows available."]
+    lines = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join(["---"] * len(columns)) + " |",
+    ]
+    for row in rows:
+        values = []
+        for column in columns:
+            value = row.get(column, "")
+            text = "" if value is None else str(value)
+            values.append(text.replace("|", "\\|").replace("\n", " "))
+        lines.append("| " + " | ".join(values) + " |")
+    return lines
+
+
+def _build_prediction_batch_plots(predictions: pd.DataFrame, output_csv: Path) -> List[str]:
+    if predictions.empty or importlib.util.find_spec("matplotlib") is None:
+        return []
+    import matplotlib.pyplot as plt
+
+    created: List[str] = []
+    output_csv = Path(output_csv)
+    output_dir = output_csv.parent
+    stem = output_csv.stem
+    risk_scores = pd.to_numeric(predictions.get("risk_score", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
+
+    band_counts = (
+        predictions.get("risk_band", pd.Series(dtype=str))
+        .fillna("Unknown")
+        .value_counts()
+        .reindex(["Low", "Review", "High"], fill_value=0)
+    )
+    fig, ax = plt.subplots(figsize=(8, 5))
+    colors = {"Low": "#94a3b8", "Review": "#f97316", "High": "#dc2626"}
+    ax.bar(band_counts.index.tolist(), band_counts.values, color=[colors.get(idx, "#64748b") for idx in band_counts.index])
+    ax.set_title("Jury CSV Risk Band Distribution")
+    ax.set_xlabel("Risk band")
+    ax.set_ylabel("Text count")
+    for idx, value in enumerate(band_counts.values):
+        share = value / max(len(predictions), 1)
+        ax.text(idx, value, f"{int(value):,}\n{share:.1%}", ha="center", va="bottom", fontsize=9)
+    ax.grid(axis="y", alpha=0.2)
+    fig.tight_layout()
+    path = output_dir / f"{stem}_risk_band_distribution.png"
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    created.append(str(path))
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.hist(risk_scores, bins=np.linspace(0, 1, 31), color="#ef4444", alpha=0.82)
+    ax.axvline(REVIEW_THRESHOLD, color="#f97316", linestyle="--", linewidth=1.7, label=f"Review >= {REVIEW_THRESHOLD:.2f}")
+    ax.axvline(RISK_THRESHOLD, color="#991b1b", linestyle="--", linewidth=1.7, label=f"High >= {RISK_THRESHOLD:.2f}")
+    ax.set_title("Jury CSV Risk Score Histogram")
+    ax.set_xlabel("Risk score")
+    ax.set_ylabel("Text count")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.2)
+    fig.tight_layout()
+    path = output_dir / f"{stem}_risk_score_histogram.png"
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    created.append(str(path))
+
+    reason_counts = _count_semicolon_values(predictions.get("top_reasons", pd.Series(dtype=str))).head(12)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    if not reason_counts.empty:
+        ax.barh(reason_counts.index.tolist()[::-1], reason_counts.values[::-1], color="#dc2626")
+        ax.set_xlabel("Text count")
+    else:
+        ax.text(0.5, 0.5, "No reason codes found", ha="center", va="center")
+        ax.set_axis_off()
+    ax.set_title("Jury CSV Top Reason Codes")
+    fig.tight_layout()
+    path = output_dir / f"{stem}_reason_code_breakdown.png"
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    created.append(str(path))
+
+    trigger_labels = {
+        "fomo_trigger": "FOMO",
+        "urgency_bait": "Urgency",
+        "loss_aversion_trigger": "Loss aversion",
+        "social_proof_trigger": "Social proof",
+        "authority_impersonation": "Authority",
+    }
+    trigger_counts_raw = _count_semicolon_values(predictions.get("psychological_triggers", pd.Series(dtype=str)))
+    trigger_items = [
+        (trigger_labels.get(name, name), int(trigger_counts_raw.get(name, 0)))
+        for name in trigger_labels
+    ]
+    fig, ax = plt.subplots(figsize=(9, 5))
+    labels = [item[0] for item in trigger_items]
+    values = [item[1] for item in trigger_items]
+    ax.bar(labels, values, color=["#b91c1c", "#ef4444", "#f97316", "#fb7185", "#7c2d12"])
+    ax.set_title("Jury CSV Psychological Trigger Coverage")
+    ax.set_ylabel("Text count")
+    ax.tick_params(axis="x", rotation=15)
+    for idx, value in enumerate(values):
+        ax.text(idx, value, f"{value:,}", ha="center", va="bottom", fontsize=9)
+    fig.tight_layout()
+    path = output_dir / f"{stem}_psychological_trigger_breakdown.png"
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    created.append(str(path))
+
+    return created
+
+
+def _build_prediction_batch_artifacts(
+    predictions: pd.DataFrame,
+    input_csv: Path,
+    output_csv: Path,
+    rows_read: int,
+) -> Dict[str, Any]:
+    output_csv = Path(output_csv)
+    output_dir = output_csv.parent
+    stem = output_csv.stem
+    total = int(len(predictions))
+    risk_scores = pd.to_numeric(predictions.get("risk_score", pd.Series(dtype=float)), errors="coerce")
+    content_scores = pd.to_numeric(predictions.get("content_risk", pd.Series(dtype=float)), errors="coerce")
+    nlp_scores = pd.to_numeric(predictions.get("nlp_text_risk", pd.Series(dtype=float)), errors="coerce")
+
+    band_series = predictions.get("risk_band", pd.Series(dtype=str)).fillna("Unknown")
+    band_counts = band_series.value_counts().reindex(["Low", "Review", "High"], fill_value=0)
+    review_high_count = int(band_counts.get("Review", 0) + band_counts.get("High", 0))
+    manipulative_count = int((predictions.get("label", pd.Series(dtype=str)) == "Manipulative").sum())
+
+    summary: Dict[str, Any] = {
+        "input_csv": str(input_csv),
+        "output_csv": str(output_csv),
+        "rows_read": int(rows_read),
+        "texts_scored": total,
+        "low_count": int(band_counts.get("Low", 0)),
+        "review_count": int(band_counts.get("Review", 0)),
+        "high_count": int(band_counts.get("High", 0)),
+        "review_high_count": review_high_count,
+        "manipulative_count": manipulative_count,
+        "low_share": float(band_counts.get("Low", 0) / max(total, 1)),
+        "review_share": float(band_counts.get("Review", 0) / max(total, 1)),
+        "high_share": float(band_counts.get("High", 0) / max(total, 1)),
+        "review_high_share": float(review_high_count / max(total, 1)),
+        "manipulative_share": float(manipulative_count / max(total, 1)),
+        "risk_score_mean": float(risk_scores.mean()) if total else 0.0,
+        "risk_score_median": float(risk_scores.median()) if total else 0.0,
+        "risk_score_p90": float(risk_scores.quantile(0.90)) if total else 0.0,
+        "risk_score_max": float(risk_scores.max()) if total else 0.0,
+        "content_risk_mean": float(content_scores.mean()) if total else 0.0,
+        "nlp_text_risk_mean": float(nlp_scores.mean()) if nlp_scores.notna().any() else None,
+    }
+
+    evidence_counts = predictions.get("evidence_level", pd.Series(dtype=str)).fillna("unknown").value_counts()
+    for level, count in evidence_counts.items():
+        summary[f"evidence_{level}_count"] = int(count)
+        summary[f"evidence_{level}_share"] = float(count / max(total, 1))
+
+    reason_counts = _count_semicolon_values(predictions.get("top_reasons", pd.Series(dtype=str)))
+    trigger_counts = _count_semicolon_values(predictions.get("psychological_triggers", pd.Series(dtype=str)))
+    summary["top_reason_codes"] = reason_counts.head(8).to_dict()
+    summary["top_psychological_triggers"] = trigger_counts.head(8).to_dict()
+
+    summary_rows = [
+        {"metric": key, "value": value}
+        for key, value in summary.items()
+        if not isinstance(value, dict)
+    ]
+    summary_csv = output_dir / f"{stem}_summary.csv"
+    pd.DataFrame(summary_rows).to_csv(summary_csv, index=False)
+
+    top_examples_cols = [
+        "test_id",
+        "source_row",
+        "source_column",
+        "risk_score",
+        "risk_band",
+        "label",
+        "top_reasons",
+        "psychological_triggers",
+        TEXT_COL,
+    ]
+    existing_top_cols = [col for col in top_examples_cols if col in predictions.columns]
+    top_examples = (
+        predictions.sort_values("risk_score", ascending=False)
+        .head(20)[existing_top_cols]
+        .copy()
+        if existing_top_cols
+        else pd.DataFrame()
+    )
+    if TEXT_COL in top_examples.columns:
+        top_examples["text_preview"] = top_examples[TEXT_COL].fillna("").astype(str).str.slice(0, 220)
+        top_examples = top_examples.drop(columns=[TEXT_COL])
+    top_examples_csv = output_dir / f"{stem}_top_risk_examples.csv"
+    top_examples.to_csv(top_examples_csv, index=False)
+
+    md_path = output_dir / f"{stem}_summary.md"
+    overview_rows = [
+        {"metric": "Rows read", "value": f"{summary['rows_read']:,}"},
+        {"metric": "Texts scored", "value": f"{summary['texts_scored']:,}"},
+        {"metric": "Average risk score", "value": f"{summary['risk_score_mean']:.4f}"},
+        {"metric": "Median risk score", "value": f"{summary['risk_score_median']:.4f}"},
+        {"metric": "P90 risk score", "value": f"{summary['risk_score_p90']:.4f}"},
+        {"metric": "Review + High share", "value": f"{summary['review_high_share']:.2%}"},
+        {"metric": "High share", "value": f"{summary['high_share']:.2%}"},
+        {"metric": "Manipulative share", "value": f"{summary['manipulative_share']:.2%}"},
+    ]
+    band_rows = [
+        {"risk_band": band, "count": int(count), "share": f"{int(count) / max(total, 1):.2%}"}
+        for band, count in band_counts.items()
+    ]
+    reason_rows = [
+        {"reason_code": reason, "count": int(count), "share": f"{int(count) / max(total, 1):.2%}"}
+        for reason, count in reason_counts.head(12).items()
+    ]
+    trigger_rows = [
+        {"trigger": trigger, "count": int(count), "share": f"{int(count) / max(total, 1):.2%}"}
+        for trigger, count in trigger_counts.head(12).items()
+    ]
+    top_rows = top_examples.head(10).to_dict("records") if not top_examples.empty else []
+    md_lines = [
+        "# Jury CSV Batch Inference Summary",
+        "",
+        f"- Input CSV: `{input_csv}`",
+        f"- Submission CSV: `{output_csv}`",
+        f"- Detailed CSV: `{output_csv.with_name(f'{output_csv.stem}_detailed.csv')}`",
+        "",
+        "## Overview",
+        *_markdown_table(overview_rows, ["metric", "value"]),
+        "",
+        "## Risk Band Distribution",
+        *_markdown_table(band_rows, ["risk_band", "count", "share"]),
+        "",
+        "## Top Reason Codes",
+        *_markdown_table(reason_rows, ["reason_code", "count", "share"]),
+        "",
+        "## Psychological Triggers",
+        *_markdown_table(trigger_rows, ["trigger", "count", "share"]),
+        "",
+        "## Top Risk Examples",
+        *_markdown_table(
+            top_rows,
+            [col for col in ["test_id", "source_row", "risk_score", "risk_band", "label", "top_reasons", "psychological_triggers", "text_preview"] if col in top_examples.columns],
+        ),
+        "",
+        "## Interpretation Note",
+        "These are batch-level inference diagnostics, not ground-truth accuracy metrics. The CSV has no verified labels, so the outputs summarize model selectivity, explanation coverage, and review workload.",
+    ]
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    plot_paths = _build_prediction_batch_plots(predictions, output_csv)
+    summary.update(
+        {
+            "summary_csv": str(summary_csv),
+            "summary_markdown": str(md_path),
+            "top_risk_examples_csv": str(top_examples_csv),
+            "batch_plot_paths": plot_paths,
+        }
+    )
+    return summary
+
+
+def _build_submission_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
+    fallback_ids = pd.Series(range(1, len(predictions) + 1), index=predictions.index)
+    submission = pd.DataFrame(
+        {
+            "test_id": predictions.get("test_id", predictions.get("source_row", fallback_ids)),
+            "text": predictions.get(TEXT_COL, pd.Series("", index=predictions.index)),
+            "label": pd.to_numeric(
+                predictions.get("risk_score", pd.Series(0.0, index=predictions.index)),
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .clip(0.0, 1.0)
+            .round(4),
+        }
+    )
+    return submission[["test_id", "text", "label"]]
+
+
 def _prediction_to_flat_row(
     prediction: Dict[str, Any],
     source_row: int,
     source_column: str,
     text: str,
+    source_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     used_features = prediction.get("used_features", {})
     text_features = used_features.get("text_features", {})
@@ -3037,7 +3698,7 @@ def _prediction_to_flat_row(
         for name, count in trigger_counts.items()
         if isinstance(count, (int, float)) and count > 0
     ]
-    return {
+    row = {
         "source_row": source_row,
         "source_column": source_column,
         TEXT_COL: text,
@@ -3063,6 +3724,12 @@ def _prediction_to_flat_row(
         "scam_signal_count": text_features.get("scam_signal_count"),
         "model_version": prediction.get("model_version"),
     }
+    if source_id is not None:
+        return {
+            "test_id": source_id,
+            **row,
+        }
+    return row
 
 
 def predict_dataframe(
@@ -3088,6 +3755,7 @@ def predict_dataframe(
     if resolved_text_column is None and not all_cells and len(df.columns) == 1:
         resolved_text_column = df.columns[0]
 
+    id_column = _resolve_column(df, candidate_names=ID_COLUMN_CANDIDATES)
     metadata_columns = {
         field: _resolve_column(df, candidate_names=candidates)
         for field, candidates in METADATA_COLUMN_CANDIDATES.items()
@@ -3096,8 +3764,11 @@ def predict_dataframe(
     rows: List[Dict[str, Any]] = []
     if all_cells or resolved_text_column is None:
         metadata_column_values = {column for column in metadata_columns.values() if column is not None}
+        if id_column is not None:
+            metadata_column_values.add(id_column)
         candidate_columns = [column for column in df.columns if column not in metadata_column_values]
         for row_idx, row in df.reset_index(drop=True).iterrows():
+            source_id = _cell_value(row, id_column, None)
             for column in candidate_columns:
                 text = _clean_scalar(row.get(column, ""))
                 if not text:
@@ -3112,10 +3783,11 @@ def predict_dataframe(
                     context=context,
                     artifacts_dir=artifacts_dir,
                 )
-                rows.append(_prediction_to_flat_row(prediction, row_idx + 1, str(column), text))
+                rows.append(_prediction_to_flat_row(prediction, row_idx + 1, str(column), text, source_id=source_id))
     else:
         for row_idx, row in df.reset_index(drop=True).iterrows():
             text = _clean_scalar(row.get(resolved_text_column, ""))
+            source_id = _cell_value(row, id_column, None)
             prediction = predict_live(
                 text,
                 language=_cell_value(row, metadata_columns["language"], language),
@@ -3126,7 +3798,7 @@ def predict_dataframe(
                 context=context,
                 artifacts_dir=artifacts_dir,
             )
-            rows.append(_prediction_to_flat_row(prediction, row_idx + 1, str(resolved_text_column), text))
+            rows.append(_prediction_to_flat_row(prediction, row_idx + 1, str(resolved_text_column), text, source_id=source_id))
 
     return pd.DataFrame(rows)
 
@@ -3165,24 +3837,24 @@ def predict_csv_file(
     )
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
-    predictions.to_csv(output_csv, index=False)
+    submission_predictions = _build_submission_predictions(predictions)
+    submission_predictions.to_csv(output_csv, index=False)
+    detailed_output_csv = output_csv.with_name(f"{output_csv.stem}_detailed.csv")
+    predictions.to_csv(detailed_output_csv, index=False)
 
-    summary = {
-        "input_csv": str(input_csv),
-        "output_csv": str(output_csv),
-        "rows_read": int(len(df)),
-        "texts_scored": int(len(predictions)),
-        "high_count": int((predictions.get("risk_band", pd.Series(dtype=str)) == "High").sum()),
-        "review_count": int((predictions.get("risk_band", pd.Series(dtype=str)) == "Review").sum()),
-        "low_count": int((predictions.get("risk_band", pd.Series(dtype=str)) == "Low").sum()),
-    }
-    summary["manipulative_count"] = int((predictions.get("label", pd.Series(dtype=str)) == "Manipulative").sum())
-    summary["manipulative_share"] = (
-        summary["manipulative_count"] / max(summary["texts_scored"], 1)
+    summary = _build_prediction_batch_artifacts(
+        predictions=predictions,
+        input_csv=input_csv,
+        output_csv=output_csv,
+        rows_read=len(df),
     )
+    summary["submission_output_csv"] = str(output_csv)
+    summary["detailed_output_csv"] = str(detailed_output_csv)
+    summary["submission_columns"] = ["test_id", "text", "label"]
+    summary["label_definition"] = "0-1 manipulative risk score; 0 means more organic, 1 means more manipulative."
     summary_path = output_csv.with_suffix(".summary.json")
-    summary_path.write_text(json.dumps(_json_safe(summary), indent=2, ensure_ascii=False), encoding="utf-8")
     summary["summary_json"] = str(summary_path)
+    summary_path.write_text(json.dumps(_json_safe(summary), indent=2, ensure_ascii=False), encoding="utf-8")
     return predictions, summary
 
 
@@ -3395,6 +4067,10 @@ def smoke_test() -> None:
     )
     assert no_header_summary["texts_scored"] == 2
     assert len(no_header_predictions) == 2
+    assert Path(no_header_summary["summary_csv"]).exists()
+    assert Path(no_header_summary["summary_markdown"]).exists()
+    assert Path(no_header_summary["top_risk_examples_csv"]).exists()
+    assert "risk_score_mean" in no_header_summary
     semicolon_path = Path("/tmp/datathon_smoke_semicolon.csv")
     semicolon_output = Path("/tmp/datathon_smoke_semicolon_predictions.csv")
     semicolon_path.write_text(
@@ -3410,6 +4086,28 @@ def smoke_test() -> None:
     )
     assert semicolon_summary["texts_scored"] == 2
     assert len(semicolon_predictions) == 2
+    jury_format_path = Path("/tmp/datathon_smoke_jury_format.csv")
+    jury_format_output = Path("/tmp/datathon_smoke_jury_format_predictions.csv")
+    jury_format_path.write_text(
+        "test_id,text\n"
+        "case-001,The city council published the meeting notes.\n"
+        "case-002,BUY NOW!!! FREE FREE FREE #deal #promo https://spam.example.com\n",
+        encoding="utf-8",
+    )
+    jury_predictions, jury_summary = predict_csv_file(
+        jury_format_path,
+        output_csv=jury_format_output,
+    )
+    assert jury_summary["texts_scored"] == 2
+    assert "test_id" in jury_predictions.columns
+    assert jury_predictions["test_id"].tolist() == ["case-001", "case-002"]
+    assert jury_predictions["source_column"].nunique() == 1
+    assert jury_predictions["source_column"].iloc[0] == "text"
+    jury_submission = pd.read_csv(jury_format_output)
+    assert jury_submission.columns.tolist() == ["test_id", "text", "label"]
+    assert jury_submission["test_id"].tolist() == ["case-001", "case-002"]
+    assert jury_submission["label"].between(0, 1).all()
+    assert Path(jury_summary["detailed_output_csv"]).exists()
     print("Smoke tests passed.")
 
 
