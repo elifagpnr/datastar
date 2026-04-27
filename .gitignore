@@ -17,6 +17,8 @@ build/
 # Large local/generated data
 dataset/*.parquet
 artifacts/scored_sample.csv
+jury_inputs/*
+!jury_inputs/README.md
 
 # OS files
 .DS_Store

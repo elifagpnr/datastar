@@ -33,7 +33,7 @@ python datathon_pipeline.py predict "BUY NOW!!! FREE FREE FREE #deal #promo http
 Batch CSV prediction for jury-provided texts:
 
 ```bash
-python datathon_pipeline.py predict-csv jury_texts.csv --output artifacts/jury_predictions.csv
+python datathon_pipeline.py predict-csv jury_inputs/jury_texts.csv --output artifacts/jury_predictions.csv
 ```
 
 CSV handling:
@@ -46,6 +46,19 @@ CSV handling:
 - If the CSV uses semicolon delimiters, pass `--sep ";"`.
 
 Output includes `label`, `risk_band`, `risk_score`, `organic_score`, `top_reasons`, `nlp_text_risk`, and source row/column metadata.
+
+Notebook workflow for the presentation:
+
+1. Put the jury CSV file under `jury_inputs/`.
+2. Open `ads.ipynb`.
+3. Go to `## 8. Jury CSV Batch Inference`.
+4. Change only:
+
+```python
+JURY_CSV_FILENAME = "jury_texts.csv"
+```
+
+5. Run the cell. It writes `artifacts/jury_predictions_<file_name>.csv` and displays the risk-band summary plus the first scored rows.
 
 If your system Python says `externally-managed-environment`, use the virtualenv commands above. In VS Code/Jupyter, select `.venv/bin/python` as the notebook kernel before running `ads.ipynb`.
 
