@@ -17,6 +17,7 @@
 - Gözetimsiz ve açıklanabilir risk skorlama.
 - Üç ana sinyal: içerik riski, author davranış riski, koordinasyon riski.
 - Final skor: content, author ve coordination kanıtlarının ağırlıklı birleşimi; eksik metadata olduğunda ağırlıklar yeniden normalize edilir.
+- Canlı text-only tahminlerde yardımcı katman: pseudo-label ile eğitilmiş hash n-gram NLP text modeli.
 
 ---
 
@@ -33,6 +34,7 @@
 - Örneklemde Review + High oranı: 5.1%
 - Örneklemde High-risk oranı: 2.3%
 - Ana görsel: `artifacts/risk_map_language_platform.png`
+- Temporal kampanya pencereleri: 0 Campaign Burst; görsel `artifacts/temporal_burst_windows.png`
 
 ---
 
@@ -51,6 +53,7 @@
 - kw:btc|https|join: boyut=7.0, author=7.0, pencere=1.8 saat, güven=0.94, risk=0.85
 - kw:cinema|cinema history|greatest|greatest villains|history|repost|villains: boyut=4.0, author=4.0, pencere=23.6 saat, güven=0.91, risk=0.76
 - Somut şüpheli gönderi örnekleri: `artifacts/presentation_examples.csv`
+- Jüriye anlatılacak hikayeler: `artifacts/case_studies.md`
 - En riskli author özetleri: `artifacts/top_risk_authors.csv`
 
 ---
@@ -73,15 +76,18 @@
 - Güçlü reason destekli High oranı: 82.9%
 - Sunuma uygun güçlü High örnek: 3,746
 - Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`.
+- Kampanya dönemi kanıtı: `temporal_burst_windows.csv` ve `temporal_burst_windows.png`.
 - Etiket sağlanmadığı için bunlar proxy kanıt metrikleri ve senaryo kontrolleridir; etiketli performans metriği iddiası değildir.
 
 ---
 
 ## 10. Canlı Demo ve Sınırlar
 - Demo fonksiyonu: `predict_live(text, language=None, url=None, author_hash=None, date=None, english_keywords=None)`.
-- Dönen alanlar: label, risk score, organic score, top reasons, used features ve psychological triggers.
+- Dönen alanlar: label, risk score, organic score, nlp_text_risk, top reasons, used features ve psychological triggers.
 - Canlı inference hazırlık senaryoları: 10/10 başarılı.
 - Benchmark artifact'i: `artifacts/live_inference_benchmark.csv`.
+- NLP text model artifact'i: `artifacts/nlp_text_model.npz`; eğitim özeti: `artifacts/nlp_text_model_metadata.json`.
+- NLP eğitim verisi: yüksek güvenli pseudo-positive ve pseudo-negative örneklerden sınıf başına 3,656 metin.
 - Sınırlar: gözetimsiz eşikleme kullanılır; exact/near-exact narrative signature yaklaşımı vardır; metadata geldikçe güven seviyesi artar.
 
 ---
@@ -94,9 +100,11 @@
 - `platform_normalized_risk.png`: Platformları kendi hacmine göre normalize eder; büyük platformların ham sayı avantajını dengeler.
 - `top_risk_authors.png`: Author bazlı hacim, burst, tekrar ve konu çeşitliliği sinyallerini özetler.
 - `hourly_suspicious_share.png`: Saatlik Review + High oranını gösterir; burst/kampanya dönemlerini yakalamaya yarar.
+- `temporal_burst_windows.png`: Saatlik risk oranındaki z-score sıçramalarını ve Campaign Burst pencerelerini işaretler.
 - `risk_funnel.png`: Tüm veriden güçlü reason destekli High örneklere daralan seçim hunisini gösterir.
 - `reason_code_breakdown.png`: High-risk kararların hangi açıklanabilir reason code'lara dayandığını gösterir.
 - `psychological_trigger_breakdown.png`: FOMO, aciliyet, kayıptan kaçınma, sosyal kanıt ve otorite taklidi sinyallerini gösterir.
 - `live_inference_benchmark.png`: Sentetik canlı test senaryolarında modelin risk skorlarını eşiklerle birlikte gösterir.
 - `coordination_confidence_bubble.png`: Cluster güveni, zaman penceresi, cluster boyutu ve coordination risk ilişkisini gösterir.
 - `evidence_quality_summary.png`: High-risk kararların boş olmayan metin, güçlü reason, içerik/author/coordination desteği gibi kalite boyutlarını özetler.
+- `case_studies.md`: Finansal scam, koordinasyon ve psikolojik tetikleyici örneklerini gerçek skorlanmış satırlardan hikayeleştirir.

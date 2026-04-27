@@ -26,11 +26,13 @@ Bu bölüm gözetimsiz bir kanıt katmanıdır. Proxy metrikler, senaryo kontrol
 | `platform_normalized_risk.png` | Platform içi risk oranını veri seti ortalamasına göre normalize eder. | X gibi büyük platformların ham hacim avantajını dengeleyip adil kıyas sunar. |
 | `top_risk_authors.png` | Davranışsal sinyallere göre en riskli author_hash değerlerini gösterir. | Burst, tekrar ve hacim davranışını tekil aktör seviyesinde kanıtlar. |
 | `hourly_suspicious_share.png` | Saatlik Review + High oranını zaman üzerinde gösterir. | Kampanya/burst dönemlerini ve zamansal yoğunlaşmayı anlatır. |
+| `temporal_burst_windows.png` | Saatlik risk oranındaki z-score sıçramalarını ve Campaign Burst pencerelerini gösterir. | Gerçek dünyada kampanya dönemlerini erken uyarı olarak yakalayabildiğimizi anlatır. |
 | `risk_funnel.png` | Tüm satırlardan Review + High, High ve güçlü reason destekli High örneklere daralan huniyi gösterir. | Modelin seçici ve kanıt odaklı karar verdiğini pazarlamak için kullanılır. |
 | `reason_code_breakdown.png` | High-risk kararlarını açıklayan reason code dağılımını gösterir. | Kararların kara kutu olmadığını, açıklanabilir sinyallere dayandığını gösterir. |
 | `psychological_trigger_breakdown.png` | FOMO, aciliyet, kayıptan kaçınma, sosyal kanıt ve otorite taklidi sinyallerinin kapsamını gösterir. | Spam dilini psikolojik manipülasyon tetikleyicileriyle ilişkilendirmek için kullanılır. |
 | `live_inference_benchmark.png` | Sentetik canlı inference senaryolarının risk skorlarını eşiklerle birlikte gösterir. | Jürinin gizli metin testine hazır olduğumuzu göstermek için kullanılır. |
 | `coordination_confidence_bubble.png` | Coordination cluster'larının zaman penceresi, güven skoru, boyut ve coordination risk ilişkisini gösterir. | Koordineli davranış tespitinin sadece metin değil, zaman ve author yayılımıyla desteklendiğini anlatır. |
 | `evidence_quality_summary.png` | High-risk kararların ne kadarının boş olmayan, güçlü reason destekli, içerik/author/coordination destekli olduğunu gösterir. | High-risk karar kalitesini ve savunulabilirliği özetler. |
+| `case_studies.md` | Gerçek skorlanmış satırlardan seçilen 3 savunulabilir hikayeyi özetler. | Jürinin 'somut örnek göster' sorusuna doğrudan cevap olarak kullanılır. |
 
 Önerilen konumlandırma: Etiketsiz sosyal medya verisi için açıklanabilir, seçici ve canlı inference'a hazır risk skorlama sistemi.

@@ -30,7 +30,35 @@ python datathon_pipeline.py predict "BUY NOW!!! FREE FREE FREE #deal #promo http
   --english-keywords "buy, free, promo, deal"
 ```
 
+Batch CSV prediction for jury-provided texts:
+
+```bash
+python datathon_pipeline.py predict-csv jury_texts.csv --output artifacts/jury_predictions.csv
+```
+
+CSV handling:
+
+- If the file has an `original_text` column, it is used automatically.
+- If the file has a single text column, it is used automatically.
+- If the file has no header, add `--no-header`.
+- If the file has multiple text cells across columns, add `--all-cells`.
+- If the text column has a different name, pass `--text-column "column_name"`.
+- If the CSV uses semicolon delimiters, pass `--sep ";"`.
+
+Output includes `label`, `risk_band`, `risk_score`, `organic_score`, `top_reasons`, `nlp_text_risk`, and source row/column metadata.
+
 If your system Python says `externally-managed-environment`, use the virtualenv commands above. In VS Code/Jupyter, select `.venv/bin/python` as the notebook kernel before running `ads.ipynb`.
+
+## Text-Only NLP Layer
+
+The main system remains an explainable unsupervised risk scoring pipeline. For jury-provided `original_text` inputs, the pipeline also trains a lightweight pseudo-labeled NLP text model during `run`:
+
+- positive pseudo-labels: high-risk, non-empty texts with strong manipulation reason codes
+- negative pseudo-labels: low-risk, non-empty texts with `LOW_CONTENT_RISK`
+- model: hashed word/character n-gram log-odds classifier implemented with `numpy`
+- outputs: `artifacts/nlp_text_model.npz`, `artifacts/nlp_text_model_metadata.json`, `artifacts/nlp_pseudo_label_training_summary.csv`
+
+`predict_live()` reports `nlp_text_risk` and `nlp_model_used`. This is not a label-based supervised accuracy claim; it is a weakly supervised helper for more stable text-only inference.
 
 ## Main Files
 
@@ -51,9 +79,17 @@ The pipeline writes these files under `artifacts/`:
 - `top_risk_authors.csv`
 - `platform_normalized_risk.csv`
 - `time_spikes.csv`
+- `temporal_burst_windows.csv`
+- `language_manipulative_share.csv`
+- `case_studies.md`
+- `nlp_text_model.npz`
+- `nlp_text_model_metadata.json`
+- `nlp_pseudo_label_training_summary.csv`
 - `risk_map_language_platform.png`
+- `language_manipulative_share.png`
 - `top_suspicious_segments.png`
 - `hourly_suspicious_share.png`
+- `temporal_burst_windows.png`
 - `risk_score_histogram.png`
 - `platform_normalized_risk.png`
 - `top_risk_authors.png`
@@ -74,6 +110,8 @@ Additional explainability artifacts:
 - author-level summary: highlights authors with high volume, burst, and repetition signals
 - cluster confidence score: combines known author spread, compact time window, cluster size, and exact narrative match
 - platform-normalized risk: compares each platform's Review + High rate against the dataset average
+- temporal burst windows: flags hourly Review + High or High share z-score spikes as campaign-burst evidence without changing row labels
+- case studies: summarizes concrete jury-facing examples from real scored rows
 
 Risk bands:
 

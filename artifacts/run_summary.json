@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-26T18:09:02.621977+00:00",
+  "created_at": "2026-04-26T23:40:34.366734+00:00",
   "data_path": "dataset/datathonFINAL.parquet",
   "sample_size_requested": 200000,
   "risk_threshold": 0.65,
@@ -12,6 +12,7 @@
     "artifacts/platform_normalized_risk.png",
     "artifacts/top_risk_authors.png",
     "artifacts/hourly_suspicious_share.png",
+    "artifacts/temporal_burst_windows.png",
     "artifacts/risk_funnel.png",
     "artifacts/reason_code_breakdown.png",
     "artifacts/psychological_trigger_breakdown.png",
@@ -19,6 +20,7 @@
     "artifacts/coordination_confidence_bubble.png",
     "artifacts/evidence_quality_summary.png"
   ],
+  "case_studies_path": "artifacts/case_studies.md",
   "suspicious_count": 10264,
   "high_risk_count": 4516,
   "review_count": 5748,
@@ -807,6 +809,8 @@
       "sufficient_sample": false
     }
   ],
+  "temporal_burst_count": 0,
+  "top_temporal_bursts": [],
   "marketing_scorecard": [
     {
       "metric": "Skorlanan örnek satır",
@@ -863,5 +867,19 @@
   "live_inference_readiness_total": 10,
   "high_risk_non_empty_share": 0.9827280779450841,
   "high_risk_strong_reason_share": 0.8294951284322409,
-  "high_confidence_coordination_cluster_count": 9
+  "high_confidence_coordination_cluster_count": 9,
+  "nlp_text_model": {
+    "model_version": "pseudo-label-hash-ngram-v1",
+    "hash_dim": 131072,
+    "positive_candidates": 3656,
+    "negative_candidates": 112968,
+    "train_docs_per_class": 3656,
+    "trained": true,
+    "positive_rule": "risk_score >= 0.65, non-empty, meaningful text, strong reason",
+    "negative_rule": "risk_score <= 0.20, LOW_CONTENT_RISK, non-empty, meaningful text",
+    "positive_doc_features": 2626537,
+    "negative_doc_features": 1227382,
+    "alpha": 0.5,
+    "scoring": "sigmoid(mean(feature_log_odds)) with rule-evidence gate"
+  }
 }

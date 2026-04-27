@@ -6,6 +6,7 @@ import json
 import math
 import re
 import unicodedata
+import zlib
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,11 @@ ARTIFACT_DIR = Path("artifacts")
 RISK_THRESHOLD = 0.65
 REVIEW_THRESHOLD = 0.45
 MODEL_VERSION = "text-calibration-v4-psychological-triggers"
+NLP_TEXT_MODEL_VERSION = "pseudo-label-hash-ngram-v1"
+NLP_HASH_DIM = 2 ** 17
+NLP_MAX_DOCS_PER_CLASS = 40_000
+NLP_MIN_DOCS_PER_CLASS = 50
+NLP_RANDOM_SEED = 42
 
 TEXT_COL = "original_text"
 KEYWORDS_COL = "english_keywords"
@@ -28,6 +34,27 @@ SENTIMENT_COL = "sentiment"
 AUTHOR_COL = "author_hash"
 DATE_COL = "date"
 URL_COL = "url"
+
+TEXT_COLUMN_CANDIDATES = {
+    "original_text",
+    "originaltext",
+    "text",
+    "content",
+    "message",
+    "body",
+    "post",
+    "tweet",
+    "caption",
+    "comment",
+}
+
+METADATA_COLUMN_CANDIDATES = {
+    "language": {"language", "lang", "dil"},
+    URL_COL: {URL_COL, "link", "domain", "platform", "platform_domain"},
+    AUTHOR_COL: {AUTHOR_COL, "author", "user", "user_id", "account", "account_id"},
+    DATE_COL: {DATE_COL, "created_at", "timestamp", "time", "datetime"},
+    KEYWORDS_COL: {KEYWORDS_COL, "keywords", "english_keyword", "keyword"},
+}
 
 REQUIRED_COLUMNS = [
     TEXT_COL,
@@ -385,6 +412,12 @@ def _clean_scalar(value: Any) -> str:
     return str(value).strip()
 
 
+def normalize_column_name(value: Any) -> str:
+    normalized = fold_text_for_match(value)
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+    return re.sub(r"_+", "_", normalized).strip("_")
+
+
 def fold_text_for_match(value: Any) -> str:
     text = _clean_scalar(value).casefold().translate(TURKISH_CHAR_MAP)
     text = unicodedata.normalize("NFKD", text)
@@ -487,6 +520,7 @@ def compute_text_features(df: pd.DataFrame) -> pd.DataFrame:
     texts = df.get(TEXT_COL, pd.Series("", index=df.index)).fillna("").astype(str)
     stripped_texts = texts.str.strip()
     folded_texts = texts.apply(fold_text_for_match)
+    normalized_texts = texts.apply(normalize_text)
     stats = [_token_stats(text) for text in texts.tolist()]
     features = pd.DataFrame(
         stats,
@@ -514,6 +548,11 @@ def compute_text_features(df: pd.DataFrame) -> pd.DataFrame:
     features["url_count"] = texts.str.count(URL_PATTERN, flags=re.IGNORECASE).astype(float)
     features["hashtag_count"] = texts.str.count(r"#\w+").astype(float)
     features["mention_count"] = texts.str.count(r"@\w+").astype(float)
+    features["url_only_or_link_only"] = (
+        (stripped_char_len > 0)
+        & ((features["url_count"] + features["hashtag_count"] + features["mention_count"]) > 0)
+        & (normalized_texts.str.len() == 0)
+    ).astype(float)
     features["punctuation_count"] = punctuation_count.astype(float)
     features["uppercase_ratio"] = np.divide(
         uppercase_count,
@@ -651,6 +690,8 @@ def content_reason_codes(row: pd.Series) -> List[str]:
         reasons.append("HIGH_TOKEN_REPETITION")
     if row["link_signal_density"] >= 0.22:
         reasons.append("LINK_HASHTAG_MENTION_DENSE")
+    if row.get("url_only_or_link_only", 0) > 0:
+        reasons.append("URL_ONLY_OR_LINK_ONLY")
     if row["uppercase_ratio"] >= 0.55 and row["word_count"] >= 5:
         reasons.append("HIGH_UPPERCASE_RATIO")
     if row["punctuation_density"] >= 0.04:
@@ -1172,6 +1213,427 @@ def text_has_meaningful_signature(value: Any) -> bool:
     return bool(text_signature(value))
 
 
+def stable_hash(value: str, modulo: int = NLP_HASH_DIM) -> int:
+    return zlib.crc32(value.encode("utf-8")) % modulo
+
+
+def nlp_text_feature_ids(text: Any, hash_dim: int = NLP_HASH_DIM) -> np.ndarray:
+    normalized = normalize_text(text)
+    if not normalized:
+        return np.array([], dtype=np.int64)
+    tokens = [
+        token
+        for token in WORD_RE.findall(normalized)
+        if len(token) >= 2 and token not in STOPWORDS
+    ]
+    feature_ids: set[int] = set()
+    for token in tokens[:120]:
+        feature_ids.add(stable_hash(f"w:{token}", hash_dim))
+    for left, right in zip(tokens[:119], tokens[1:120]):
+        feature_ids.add(stable_hash(f"wb:{left}_{right}", hash_dim))
+
+    char_source = " ".join(tokens)[:600]
+    for ngram_size in (3, 4, 5):
+        if len(char_source) < ngram_size:
+            continue
+        for idx in range(0, len(char_source) - ngram_size + 1):
+            piece = char_source[idx : idx + ngram_size]
+            if piece.strip():
+                feature_ids.add(stable_hash(f"c{ngram_size}:{piece}", hash_dim))
+    if not feature_ids:
+        return np.array([], dtype=np.int64)
+    return np.fromiter(feature_ids, dtype=np.int64)
+
+
+def _sigmoid(value: float) -> float:
+    if value >= 0:
+        z = math.exp(-value)
+        return 1.0 / (1.0 + z)
+    z = math.exp(value)
+    return z / (1.0 + z)
+
+
+def train_nlp_text_model(scored: pd.DataFrame, artifacts_dir: Path) -> Optional[Dict[str, Any]]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    text_len = scored["stripped_char_len"].fillna(0)
+    reason_values = scored["reason_codes"].fillna("")
+    strong_reason = reason_values.apply(lambda value: has_any_reason(value, STRONG_PRESENTATION_REASONS))
+    not_empty = ~reason_values.str.contains("EMPTY_TEXT", regex=False)
+
+    positive = scored[
+        (scored["risk_score"].fillna(0.0) >= RISK_THRESHOLD)
+        & (text_len >= 35)
+        & strong_reason
+        & not_empty
+        & scored[TEXT_COL].apply(text_has_meaningful_signature)
+    ].copy()
+    negative = scored[
+        (scored["risk_score"].fillna(1.0) <= 0.20)
+        & (text_len >= 35)
+        & reason_values.str.contains("LOW_CONTENT_RISK", regex=False)
+        & (~strong_reason)
+        & scored[TEXT_COL].apply(text_has_meaningful_signature)
+    ].copy()
+
+    usable_docs_per_class = min(len(positive), len(negative), NLP_MAX_DOCS_PER_CLASS)
+    metadata = {
+        "model_version": NLP_TEXT_MODEL_VERSION,
+        "hash_dim": NLP_HASH_DIM,
+        "positive_candidates": int(len(positive)),
+        "negative_candidates": int(len(negative)),
+        "train_docs_per_class": int(usable_docs_per_class),
+        "trained": bool(usable_docs_per_class >= NLP_MIN_DOCS_PER_CLASS),
+        "positive_rule": "risk_score >= 0.65, non-empty, meaningful text, strong reason",
+        "negative_rule": "risk_score <= 0.20, LOW_CONTENT_RISK, non-empty, meaningful text",
+    }
+
+    if usable_docs_per_class < NLP_MIN_DOCS_PER_CLASS:
+        (artifacts_dir / "nlp_text_model_metadata.json").write_text(
+            json.dumps(_json_safe(metadata), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        pd.DataFrame([metadata]).to_csv(artifacts_dir / "nlp_pseudo_label_training_summary.csv", index=False)
+        return None
+
+    positive = positive.sample(n=usable_docs_per_class, random_state=NLP_RANDOM_SEED)
+    negative = negative.sample(n=usable_docs_per_class, random_state=NLP_RANDOM_SEED)
+
+    pos_df = np.zeros(NLP_HASH_DIM, dtype=np.float32)
+    neg_df = np.zeros(NLP_HASH_DIM, dtype=np.float32)
+    pos_doc_features = 0
+    neg_doc_features = 0
+    for text in positive[TEXT_COL].fillna("").astype(str):
+        ids = nlp_text_feature_ids(text)
+        if len(ids):
+            pos_df[ids] += 1.0
+            pos_doc_features += int(len(ids))
+    for text in negative[TEXT_COL].fillna("").astype(str):
+        ids = nlp_text_feature_ids(text)
+        if len(ids):
+            neg_df[ids] += 1.0
+            neg_doc_features += int(len(ids))
+
+    alpha = 0.5
+    pos_rate = (pos_df + alpha) / (usable_docs_per_class + 2.0 * alpha)
+    neg_rate = (neg_df + alpha) / (usable_docs_per_class + 2.0 * alpha)
+    feature_log_odds = np.clip(np.log(pos_rate) - np.log(neg_rate), -5.0, 5.0).astype(np.float32)
+
+    metadata.update(
+        {
+            "positive_doc_features": int(pos_doc_features),
+            "negative_doc_features": int(neg_doc_features),
+            "alpha": float(alpha),
+            "scoring": "sigmoid(mean(feature_log_odds)) with rule-evidence gate",
+        }
+    )
+    np.savez_compressed(
+        artifacts_dir / "nlp_text_model.npz",
+        feature_log_odds=feature_log_odds,
+        hash_dim=np.array([NLP_HASH_DIM], dtype=np.int64),
+        scale=np.array([1.0], dtype=np.float32),
+    )
+    (artifacts_dir / "nlp_text_model_metadata.json").write_text(
+        json.dumps(_json_safe(metadata), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    pd.DataFrame([metadata]).to_csv(artifacts_dir / "nlp_pseudo_label_training_summary.csv", index=False)
+    return {
+        "feature_log_odds": feature_log_odds,
+        "hash_dim": NLP_HASH_DIM,
+        "scale": 1.0,
+        "metadata": metadata,
+    }
+
+
+def load_nlp_text_model(artifacts_dir: Path = ARTIFACT_DIR) -> Optional[Dict[str, Any]]:
+    model_path = artifacts_dir / "nlp_text_model.npz"
+    if not model_path.exists():
+        return None
+    data = np.load(model_path)
+    metadata_path = artifacts_dir / "nlp_text_model_metadata.json"
+    metadata: Dict[str, Any] = {}
+    if metadata_path.exists():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    hash_dim = int(data["hash_dim"][0]) if "hash_dim" in data else NLP_HASH_DIM
+    scale = float(data["scale"][0]) if "scale" in data else 2.2
+    return {
+        "feature_log_odds": data["feature_log_odds"].astype(np.float32),
+        "hash_dim": hash_dim,
+        "scale": scale,
+        "metadata": metadata,
+    }
+
+
+def predict_nlp_text_risk(text: Any, model: Optional[Dict[str, Any]]) -> Optional[float]:
+    if not model or "feature_log_odds" not in model:
+        return None
+    weights = model["feature_log_odds"]
+    hash_dim = int(model.get("hash_dim", len(weights)))
+    ids = nlp_text_feature_ids(text, hash_dim=hash_dim)
+    if len(ids) == 0:
+        return None
+    evidence = weights[ids]
+    if len(evidence) == 0:
+        return None
+    raw = float(model.get("scale", 1.0)) * float(np.mean(evidence))
+    return float(_clip01(_sigmoid(raw)))
+
+
+def _zscore(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce").fillna(0.0).astype(float)
+    std = float(numeric.std(ddof=0))
+    if std <= 1e-12:
+        return pd.Series(0.0, index=values.index)
+    return (numeric - float(numeric.mean())) / std
+
+
+def build_temporal_burst_windows(time_spikes: pd.DataFrame) -> pd.DataFrame:
+    if time_spikes.empty:
+        return pd.DataFrame(
+            columns=[
+                "hour",
+                "posts",
+                "suspicious_posts",
+                "high_posts",
+                "avg_risk",
+                "suspicious_share",
+                "high_share",
+                "suspicious_share_zscore",
+                "high_share_zscore",
+                "burst_score",
+                "burst_label",
+            ]
+        )
+    bursts = time_spikes.copy()
+    if "high_posts" not in bursts.columns:
+        bursts["high_posts"] = 0
+    if "suspicious_share" not in bursts.columns:
+        bursts["suspicious_share"] = bursts["suspicious_posts"] / bursts["posts"].clip(lower=1)
+    bursts["high_share"] = bursts["high_posts"] / bursts["posts"].clip(lower=1)
+    bursts["suspicious_share_zscore"] = _zscore(bursts["suspicious_share"])
+    bursts["high_share_zscore"] = _zscore(bursts["high_share"])
+    bursts["burst_score"] = np.maximum(
+        bursts["suspicious_share_zscore"].fillna(0.0),
+        bursts["high_share_zscore"].fillna(0.0),
+    )
+    bursts["burst_label"] = np.where(
+        (bursts["burst_score"] >= 2.0) & (bursts["posts"] >= 100),
+        "Campaign Burst",
+        "Normal",
+    )
+    return bursts.sort_values("hour").reset_index(drop=True)
+
+
+def _text_preview(value: Any, limit: int = 360) -> str:
+    text = re.sub(r"\s+", " ", _clean_scalar(value))
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(limit - 3, 0)]}..."
+
+
+def _format_float(value: Any, digits: int = 3) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if math.isnan(numeric) or math.isinf(numeric):
+        return "n/a"
+    return f"{numeric:.{digits}f}"
+
+
+def _format_case_section(
+    title: str,
+    row: Optional[pd.Series],
+    why: str,
+    jury_sentence: str,
+    limitation: str,
+    extra_fields: Optional[List[Tuple[str, Any]]] = None,
+) -> List[str]:
+    lines = [f"## {title}", ""]
+    if row is None:
+        lines.extend(["Uygun gerçek örnek bulunamadı.", ""])
+        return lines
+    fields = [
+        ("Risk score", _format_float(row.get("risk_score"))),
+        ("Risk band", row.get("risk_band", "n/a")),
+        ("Label", row.get("label", "n/a")),
+        ("Reason codes", row.get("reason_codes", "n/a")),
+        ("Language", row.get("language", "n/a")),
+        ("Platform", row.get("platform_domain", "n/a")),
+        ("Theme", row.get("primary_theme", "n/a")),
+        ("Author", _text_preview(row.get(AUTHOR_COL, ""), 18) or "n/a"),
+        ("Date", row.get(DATE_COL, "n/a")),
+        ("Narrative signature", _text_preview(row.get("narrative_signature", ""), 120) or "n/a"),
+    ]
+    if extra_fields:
+        fields.extend(extra_fields)
+    lines.append("| Alan | Değer |")
+    lines.append("|---|---|")
+    for key, value in fields:
+        lines.append(f"| {key} | {value} |")
+    lines.extend(
+        [
+            "",
+            "**Metin preview**",
+            "",
+            f"> {_text_preview(row.get(TEXT_COL, row.get('original_text_preview', '')), 420)}",
+            "",
+            f"**Neden yakalandı?** {why}",
+            "",
+            f"**Jüriye anlatım cümlesi:** {jury_sentence}",
+            "",
+            f"**Sınırlama notu:** {limitation}",
+            "",
+        ]
+    )
+    return lines
+
+
+def build_case_studies(scored: pd.DataFrame, artifacts_dir: Path) -> Path:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    usable = scored[
+        scored["stripped_char_len"].fillna(0).ge(35)
+        & scored["stripped_char_len"].fillna(0).le(500)
+        & (~scored["reason_codes"].fillna("").str.contains("EMPTY_TEXT", regex=False))
+        & (~scored["reason_codes"].fillna("").str.contains("VERY_LONG_TEXT", regex=False))
+        & scored[TEXT_COL].apply(text_has_meaningful_signature)
+    ].copy()
+
+    financial_reasons = {
+        "FINANCIAL_OR_CRYPTO_BAIT",
+        "TRADING_BOT_BAIT",
+        "MARKET_MANIPULATION_BAIT",
+    }
+    financial_candidates = usable[
+        usable["reason_codes"].apply(lambda value: has_any_reason(value, financial_reasons))
+    ].sort_values(["risk_score", "content_risk"], ascending=False)
+    financial_row = financial_candidates.iloc[0] if not financial_candidates.empty else None
+
+    cluster_cols = [
+        "narrative_signature",
+        "coordination_risk",
+        "cluster_confidence_score",
+        "cluster_size",
+        "cluster_author_nunique",
+        "cluster_platform_nunique",
+        "cluster_language_nunique",
+        "cluster_window_hours",
+        "signature_term_count",
+        "cluster_example_text",
+    ]
+    existing_cluster_cols = [col for col in cluster_cols if col in scored.columns]
+    clusters = scored[existing_cluster_cols].drop_duplicates() if existing_cluster_cols else pd.DataFrame()
+    if not clusters.empty:
+        clusters = clusters[
+            clusters["cluster_confidence_score"].fillna(0.0).ge(0.80)
+            & clusters["cluster_size"].fillna(0).ge(4)
+            & clusters["cluster_author_nunique"].fillna(0).ge(3)
+            & clusters["cluster_window_hours"].fillna(float("inf")).le(72)
+            & (~clusters["narrative_signature"].fillna("").apply(is_weak_narrative_signature))
+        ].sort_values(["cluster_confidence_score", "coordination_risk", "cluster_size"], ascending=False)
+    cluster_row = None
+    if not clusters.empty:
+        best_cluster = clusters.iloc[0]
+        cluster_matches = scored[scored["narrative_signature"] == best_cluster["narrative_signature"]].copy()
+        cluster_matches["case_priority"] = np.maximum(
+            cluster_matches["risk_score"].fillna(0.0),
+            cluster_matches["coordination_risk"].fillna(0.0),
+        )
+        cluster_row = cluster_matches.sort_values("case_priority", ascending=False).iloc[0]
+
+    primary_psychological_reasons = {
+        "FOMO_TRIGGER",
+        "LOSS_AVERSION_TRIGGER",
+        "SOCIAL_PROOF_TRIGGER",
+        "AUTHORITY_IMPERSONATION",
+    }
+    psychological_candidates = usable[
+        usable["reason_codes"].apply(lambda value: has_any_reason(value, primary_psychological_reasons))
+    ].copy()
+    if not psychological_candidates.empty:
+        psychological_candidates["psychological_case_priority"] = psychological_candidates["reason_codes"].apply(
+            lambda value: (
+                4
+                if "FOMO_TRIGGER" in split_reason_codes(value)
+                else 3
+                if "LOSS_AVERSION_TRIGGER" in split_reason_codes(value)
+                else 2
+                if "AUTHORITY_IMPERSONATION" in split_reason_codes(value)
+                else 1
+            )
+        )
+    if financial_row is not None and not psychological_candidates.empty:
+        psychological_candidates = psychological_candidates[
+            psychological_candidates["narrative_signature"] != financial_row.get("narrative_signature")
+        ]
+    psychological_candidates = psychological_candidates.sort_values(
+        ["psychological_case_priority", "risk_score", "content_risk"],
+        ascending=False,
+    )
+    psychological_row = psychological_candidates.iloc[0] if not psychological_candidates.empty else None
+
+    lines = [
+        "# Case Studies: Savunulabilir Risk Örnekleri",
+        "",
+        "Bu dosya, jüri sunumunda somut örnek anlatımı için üretilmiştir. Örnekler gerçek skorlanmış satırlardan seçilir; sentetik benchmark yalnızca canlı inference hazırlığını göstermek için ayrı artifact olarak tutulur.",
+        "",
+    ]
+    lines.extend(
+        _format_case_section(
+            "Case Study 1: Finansal/Kripto veya Trading Scam",
+            financial_row,
+            "Finansal vaat, kripto/trading dili, CTA veya link yönlendirmesi gibi güçlü reason code'lar aynı metinde birikiyor.",
+            "Bu örnek, sistemin yalnızca kelime eşleşmesine değil; finansal bait, CTA ve risk bandı birleşimine bakarak manipülatif ticari vaadi yakaladığını gösterir.",
+            "Bu karar etiketli doğruluk iddiası değildir; açıklanabilir risk sinyallerinin yoğunlaştığı bir örnektir.",
+        )
+    )
+    cluster_extra = []
+    if cluster_row is not None:
+        cluster_extra = [
+            ("Cluster size", _format_float(cluster_row.get("cluster_size"), 0)),
+            ("Cluster author count", _format_float(cluster_row.get("cluster_author_nunique"), 0)),
+            ("Cluster platform count", _format_float(cluster_row.get("cluster_platform_nunique"), 0)),
+            ("Cluster language count", _format_float(cluster_row.get("cluster_language_nunique"), 0)),
+            ("Cluster window hours", _format_float(cluster_row.get("cluster_window_hours"), 2)),
+            ("Cluster confidence", _format_float(cluster_row.get("cluster_confidence_score"), 3)),
+            ("Coordination risk", _format_float(cluster_row.get("coordination_risk"), 3)),
+        ]
+    lines.extend(
+        _format_case_section(
+            "Case Study 2: Kısa Zaman Penceresinde Koordineli Anlatı",
+            cluster_row,
+            "Aynı narrative signature kısa zaman penceresinde birden fazla author tarafından paylaşılıyor; cluster boyutu, author yayılımı ve zaman kompaktlığı confidence skorunu destekliyor.",
+            "Bu örnek, sistemin tekil metinden öteye geçip aynı anlatının kısa sürede çoklu hesaplarla yayıldığı kampanya benzeri davranışı görünür kıldığını gösterir.",
+            "Sistem çeviri semantiği iddia etmez; aynı signature içinde çok dilli yayılım varsa `cluster_language_nunique` ile bunu görünür kılar.",
+            extra_fields=cluster_extra,
+        )
+    )
+    lines.extend(
+        _format_case_section(
+            "Case Study 3: Psikolojik Manipülasyon Tetikleyicisi",
+            psychological_row,
+            "FOMO, aciliyet, kayıptan kaçınma, sosyal kanıt veya otorite taklidi gibi davranışsal manipülasyon sinyalleri reason code olarak yakalanıyor.",
+            "Bu örnek, sistemin spam dilini yalnızca teknik sinyallerle değil, psikolojik baskı mekanizmalarıyla da açıklayabildiğini gösterir.",
+            "Psikolojik trigger'lar destekleyici kanıttır; final karar risk bandı ve diğer content/author/coordination sinyalleriyle birlikte değerlendirilir.",
+        )
+    )
+
+    benchmark_path = artifacts_dir / "live_inference_benchmark.csv"
+    if benchmark_path.exists():
+        lines.extend(
+            [
+                "## Canlı Inference Benchmark Notu",
+                "",
+                "`live_inference_benchmark.csv` sentetik ama gerçekçi senaryolarda canlı tahmin hazırlığını gösterir. Bu case study dosyasındaki örnekler ise mümkün olduğunca gerçek skorlanmış satırlardan seçilir.",
+                "",
+            ]
+        )
+
+    path = artifacts_dir / "case_studies.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
 def build_tables(scored: pd.DataFrame, artifacts_dir: Path) -> Dict[str, Any]:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     high_risk = scored[scored["risk_band"] == "High"].copy()
@@ -1398,6 +1860,9 @@ def build_tables(scored: pd.DataFrame, artifacts_dir: Path) -> Dict[str, Any]:
     else:
         time_spikes = pd.DataFrame(columns=["hour", "posts", "suspicious_posts", "high_posts", "avg_risk", "suspicious_share"])
     time_spikes.to_csv(artifacts_dir / "time_spikes.csv", index=False)
+    temporal_bursts = build_temporal_burst_windows(time_spikes)
+    temporal_bursts.to_csv(artifacts_dir / "temporal_burst_windows.csv", index=False)
+    burst_rows = temporal_bursts[temporal_bursts["burst_label"] == "Campaign Burst"] if not temporal_bursts.empty else pd.DataFrame()
 
     return {
         "suspicious_count": int(len(suspicious)),
@@ -1412,6 +1877,10 @@ def build_tables(scored: pd.DataFrame, artifacts_dir: Path) -> Dict[str, Any]:
         "top_clusters": clusters.head(10).to_dict(orient="records"),
         "top_authors": author_summary.head(10).to_dict(orient="records"),
         "top_platform_normalized": platform_normalized.head(10).to_dict(orient="records"),
+        "temporal_burst_count": int(len(burst_rows)),
+        "top_temporal_bursts": burst_rows.sort_values("burst_score", ascending=False).head(10).to_dict(orient="records")
+        if not burst_rows.empty
+        else [],
     }
 
 
@@ -1447,6 +1916,8 @@ def build_live_inference_benchmark(
                 "risk_band": risk_band,
                 "label": prediction.get("label"),
                 "evidence_level": prediction.get("evidence_level"),
+                "nlp_text_risk": prediction.get("nlp_text_risk"),
+                "nlp_model_used": prediction.get("nlp_model_used"),
                 "top_reasons": ";".join(prediction.get("top_reasons", [])),
                 "psychological_triggers": ";".join(active_triggers),
                 "text_preview": case["text"][:180],
@@ -1615,12 +2086,14 @@ def build_marketing_scorecard(
             "| `platform_normalized_risk.png` | Platform içi risk oranını veri seti ortalamasına göre normalize eder. | X gibi büyük platformların ham hacim avantajını dengeleyip adil kıyas sunar. |",
             "| `top_risk_authors.png` | Davranışsal sinyallere göre en riskli author_hash değerlerini gösterir. | Burst, tekrar ve hacim davranışını tekil aktör seviyesinde kanıtlar. |",
             "| `hourly_suspicious_share.png` | Saatlik Review + High oranını zaman üzerinde gösterir. | Kampanya/burst dönemlerini ve zamansal yoğunlaşmayı anlatır. |",
+            "| `temporal_burst_windows.png` | Saatlik risk oranındaki z-score sıçramalarını ve Campaign Burst pencerelerini gösterir. | Gerçek dünyada kampanya dönemlerini erken uyarı olarak yakalayabildiğimizi anlatır. |",
             "| `risk_funnel.png` | Tüm satırlardan Review + High, High ve güçlü reason destekli High örneklere daralan huniyi gösterir. | Modelin seçici ve kanıt odaklı karar verdiğini pazarlamak için kullanılır. |",
             "| `reason_code_breakdown.png` | High-risk kararlarını açıklayan reason code dağılımını gösterir. | Kararların kara kutu olmadığını, açıklanabilir sinyallere dayandığını gösterir. |",
             "| `psychological_trigger_breakdown.png` | FOMO, aciliyet, kayıptan kaçınma, sosyal kanıt ve otorite taklidi sinyallerinin kapsamını gösterir. | Spam dilini psikolojik manipülasyon tetikleyicileriyle ilişkilendirmek için kullanılır. |",
             "| `live_inference_benchmark.png` | Sentetik canlı inference senaryolarının risk skorlarını eşiklerle birlikte gösterir. | Jürinin gizli metin testine hazır olduğumuzu göstermek için kullanılır. |",
             "| `coordination_confidence_bubble.png` | Coordination cluster'larının zaman penceresi, güven skoru, boyut ve coordination risk ilişkisini gösterir. | Koordineli davranış tespitinin sadece metin değil, zaman ve author yayılımıyla desteklendiğini anlatır. |",
             "| `evidence_quality_summary.png` | High-risk kararların ne kadarının boş olmayan, güçlü reason destekli, içerik/author/coordination destekli olduğunu gösterir. | High-risk karar kalitesini ve savunulabilirliği özetler. |",
+            "| `case_studies.md` | Gerçek skorlanmış satırlardan seçilen 3 savunulabilir hikayeyi özetler. | Jürinin 'somut örnek göster' sorusuna doğrudan cevap olarak kullanılır. |",
             "",
             "Önerilen konumlandırma: Etiketsiz sosyal medya verisi için açıklanabilir, seçici ve canlı inference'a hazır risk skorlama sistemi.",
         ]
@@ -2038,6 +2511,7 @@ def build_plots(scored: pd.DataFrame, artifacts_dir: Path) -> List[str]:
                 posts=("risk_score", "size"),
                 avg_risk=("risk_score", "mean"),
                 suspicious_posts=("risk_band", lambda values: int((values != "Low").sum())),
+                high_posts=("risk_band", lambda values: int((values == "High").sum())),
             )
             .reset_index()
         )
@@ -2051,6 +2525,37 @@ def build_plots(scored: pd.DataFrame, artifacts_dir: Path) -> List[str]:
         fig.autofmt_xdate()
         fig.tight_layout()
         path = artifacts_dir / "hourly_suspicious_share.png"
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        created.append(str(path))
+
+        temporal_bursts = build_temporal_burst_windows(hourly)
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.plot(
+            temporal_bursts["hour"],
+            temporal_bursts["suspicious_share"],
+            color="#ef4444",
+            linewidth=1.8,
+            label="Review + High share",
+        )
+        burst_points = temporal_bursts[temporal_bursts["burst_label"] == "Campaign Burst"]
+        if not burst_points.empty:
+            ax.scatter(
+                burst_points["hour"],
+                burst_points["suspicious_share"],
+                color="#7f1d1d",
+                s=np.clip(burst_points["burst_score"].astype(float) * 42, 70, 260),
+                zorder=3,
+                label="Campaign Burst",
+            )
+        ax.set_title("Temporal Burst Windows: Review + High Share Z-Score")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Suspicious share")
+        ax.grid(alpha=0.25)
+        ax.legend(loc="best")
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        path = artifacts_dir / "temporal_burst_windows.png"
         fig.savefig(path, dpi=160)
         plt.close(fig)
         created.append(str(path))
@@ -2115,6 +2620,10 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 
     live_ready = summary.get("live_inference_readiness_passed", 0)
     live_total = summary.get("live_inference_readiness_total", 0)
+    temporal_burst_count = summary.get("temporal_burst_count", 0)
+
+    nlp_meta = summary.get("nlp_text_model", {})
+    nlp_docs = nlp_meta.get("train_docs_per_class", 0)
 
     content = f"""# DataLeague Datathon Pitch Deck
 
@@ -2135,6 +2644,7 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 - Gözetimsiz ve açıklanabilir risk skorlama.
 - Üç ana sinyal: içerik riski, author davranış riski, koordinasyon riski.
 - Final skor: content, author ve coordination kanıtlarının ağırlıklı birleşimi; eksik metadata olduğunda ağırlıklar yeniden normalize edilir.
+- Canlı text-only tahminlerde yardımcı katman: pseudo-label ile eğitilmiş hash n-gram NLP text modeli.
 
 ---
 
@@ -2151,6 +2661,7 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 - Örneklemde Review + High oranı: {suspicious_share:.1%}
 - Örneklemde High-risk oranı: {high_risk_share:.1%}
 - Ana görsel: `artifacts/risk_map_language_platform.png`
+- Temporal kampanya pencereleri: {temporal_burst_count} Campaign Burst; görsel `artifacts/temporal_burst_windows.png`
 
 ---
 
@@ -2163,6 +2674,7 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 ## 7. Koordinasyon Cluster Örnekleri
 {cluster_lines}
 - Somut şüpheli gönderi örnekleri: `artifacts/presentation_examples.csv`
+- Jüriye anlatılacak hikayeler: `artifacts/case_studies.md`
 - En riskli author özetleri: `artifacts/top_risk_authors.csv`
 
 ---
@@ -2176,15 +2688,18 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 ## 9. Kanıt Scorecard
 {marketing_lines}
 - Ek görseller: `risk_funnel.png`, `reason_code_breakdown.png`, `psychological_trigger_breakdown.png`, `evidence_quality_summary.png`.
+- Kampanya dönemi kanıtı: `temporal_burst_windows.csv` ve `temporal_burst_windows.png`.
 - Etiket sağlanmadığı için bunlar proxy kanıt metrikleri ve senaryo kontrolleridir; etiketli performans metriği iddiası değildir.
 
 ---
 
 ## 10. Canlı Demo ve Sınırlar
 - Demo fonksiyonu: `predict_live(text, language=None, url=None, author_hash=None, date=None, english_keywords=None)`.
-- Dönen alanlar: label, risk score, organic score, top reasons, used features ve psychological triggers.
+- Dönen alanlar: label, risk score, organic score, nlp_text_risk, top reasons, used features ve psychological triggers.
 - Canlı inference hazırlık senaryoları: {live_ready}/{live_total} başarılı.
 - Benchmark artifact'i: `artifacts/live_inference_benchmark.csv`.
+- NLP text model artifact'i: `artifacts/nlp_text_model.npz`; eğitim özeti: `artifacts/nlp_text_model_metadata.json`.
+- NLP eğitim verisi: yüksek güvenli pseudo-positive ve pseudo-negative örneklerden sınıf başına {nlp_docs:,} metin.
 - Sınırlar: gözetimsiz eşikleme kullanılır; exact/near-exact narrative signature yaklaşımı vardır; metadata geldikçe güven seviyesi artar.
 
 ---
@@ -2197,31 +2712,36 @@ def write_pitch_deck(summary: Dict[str, Any], artifacts_dir: Path) -> Path:
 - `platform_normalized_risk.png`: Platformları kendi hacmine göre normalize eder; büyük platformların ham sayı avantajını dengeler.
 - `top_risk_authors.png`: Author bazlı hacim, burst, tekrar ve konu çeşitliliği sinyallerini özetler.
 - `hourly_suspicious_share.png`: Saatlik Review + High oranını gösterir; burst/kampanya dönemlerini yakalamaya yarar.
+- `temporal_burst_windows.png`: Saatlik risk oranındaki z-score sıçramalarını ve Campaign Burst pencerelerini işaretler.
 - `risk_funnel.png`: Tüm veriden güçlü reason destekli High örneklere daralan seçim hunisini gösterir.
 - `reason_code_breakdown.png`: High-risk kararların hangi açıklanabilir reason code'lara dayandığını gösterir.
 - `psychological_trigger_breakdown.png`: FOMO, aciliyet, kayıptan kaçınma, sosyal kanıt ve otorite taklidi sinyallerini gösterir.
 - `live_inference_benchmark.png`: Sentetik canlı test senaryolarında modelin risk skorlarını eşiklerle birlikte gösterir.
 - `coordination_confidence_bubble.png`: Cluster güveni, zaman penceresi, cluster boyutu ve coordination risk ilişkisini gösterir.
 - `evidence_quality_summary.png`: High-risk kararların boş olmayan metin, güçlü reason, içerik/author/coordination desteği gibi kalite boyutlarını özetler.
+- `case_studies.md`: Finansal scam, koordinasyon ve psikolojik tetikleyici örneklerini gerçek skorlanmış satırlardan hikayeleştirir.
 """
     path = artifacts_dir / "pitch_deck.md"
     path.write_text(content, encoding="utf-8")
     return path
 
 
-def save_context(context: Dict[str, pd.DataFrame], artifacts_dir: Path) -> None:
+def save_context(context: Dict[str, Any], artifacts_dir: Path) -> None:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     for name, frame in context.items():
         if isinstance(frame, pd.DataFrame):
             frame.to_csv(artifacts_dir / f"{name}.csv", index=False)
 
 
-def load_context(artifacts_dir: Path = ARTIFACT_DIR) -> Dict[str, pd.DataFrame]:
-    context: Dict[str, pd.DataFrame] = {}
+def load_context(artifacts_dir: Path = ARTIFACT_DIR) -> Dict[str, Any]:
+    context: Dict[str, Any] = {}
     for name in ["author_stats", "coordination_stats"]:
         path = artifacts_dir / f"{name}.csv"
         if path.exists():
             context[name] = pd.read_csv(path)
+    nlp_model = load_nlp_text_model(artifacts_dir)
+    if nlp_model is not None:
+        context["nlp_text_model"] = nlp_model
     return context
 
 
@@ -2237,6 +2757,9 @@ def run_pipeline(
     sample = load_sample(data_path=data_path, sample_size=sample_size)
     full_stats = build_full_author_stats(data_path) if use_full_author_stats else None
     scored, context = score_dataframe(sample, full_author_stats=full_stats)
+    nlp_model = train_nlp_text_model(scored, artifacts_dir)
+    if nlp_model is not None:
+        context["nlp_text_model"] = nlp_model
 
     save_context(context, artifacts_dir)
     table_summary = build_tables(scored, artifacts_dir)
@@ -2248,6 +2771,7 @@ def run_pipeline(
         make_plots=make_plots,
     )
     plot_paths.extend(marketing_plot_paths)
+    case_studies_path = build_case_studies(scored, artifacts_dir)
 
     summary: Dict[str, Any] = {
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -2256,9 +2780,12 @@ def run_pipeline(
         "risk_threshold": RISK_THRESHOLD,
         "review_threshold": REVIEW_THRESHOLD,
         "plots": plot_paths,
+        "case_studies_path": str(case_studies_path),
         **table_summary,
         **marketing_summary,
     }
+    if nlp_model is not None:
+        summary["nlp_text_model"] = nlp_model.get("metadata", {})
     (artifacts_dir / "run_summary.json").write_text(
         json.dumps(_json_safe(summary), indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -2292,7 +2819,7 @@ def predict_live(
     author_hash: Optional[str] = None,
     date: Optional[str] = None,
     english_keywords: Optional[str] = None,
-    context: Optional[Dict[str, pd.DataFrame]] = None,
+    context: Optional[Dict[str, Any]] = None,
     artifacts_dir: Path = ARTIFACT_DIR,
 ) -> Dict[str, Any]:
     if context is None:
@@ -2317,6 +2844,26 @@ def predict_live(
     features = compute_text_features(prepared)
     content_risk = float(score_content_features(features).iloc[0])
     content_reasons = content_reason_codes(features.iloc[0])
+    nlp_raw_text_risk = predict_nlp_text_risk(text or "", context.get("nlp_text_model"))
+    nlp_model_used = nlp_raw_text_risk is not None
+    nlp_support_allowed = bool(
+        content_risk >= 0.20
+        or features.iloc[0].get("call_to_action_count", 0) >= 1
+        or features.iloc[0].get("link_signal_density", 0.0) > 0
+        or features.iloc[0].get("punctuation_density", 0.0) >= 0.015
+        or features.iloc[0].get("uppercase_ratio", 0.0) >= 0.12
+        or features.iloc[0].get("scam_signal_count", 0) > 0
+    )
+    nlp_text_risk = nlp_raw_text_risk if nlp_support_allowed else None
+    if nlp_text_risk is not None:
+        if nlp_support_allowed and nlp_text_risk >= 0.90:
+            content_risk = max(content_risk, 0.72)
+        elif nlp_support_allowed and nlp_text_risk >= 0.80:
+            content_risk = max(content_risk, 0.66)
+        elif nlp_support_allowed and nlp_text_risk >= 0.70:
+            content_risk = max(content_risk, 0.50)
+        if nlp_support_allowed and nlp_text_risk >= 0.70:
+            content_reasons.append("NLP_TEXT_MODEL_SUPPORT")
 
     author_risk, author_row = _lookup_component(
         context.get("author_stats"), AUTHOR_COL, author_hash or "", "author_risk"
@@ -2367,6 +2914,10 @@ def predict_live(
 
     used_features = {
         "content_risk": round(content_risk, 4),
+        "nlp_text_risk": None if nlp_text_risk is None else round(float(nlp_text_risk), 4),
+        "nlp_raw_text_risk": None if nlp_raw_text_risk is None else round(float(nlp_raw_text_risk), 4),
+        "nlp_model_used": bool(nlp_model_used),
+        "nlp_support_allowed": bool(nlp_support_allowed),
         "author_risk": None if author_risk is None else round(float(author_risk), 4),
         "coordination_risk": None if coord_risk is None else round(float(coord_risk), 4),
         "narrative_signature": prepared["narrative_signature"].iloc[0],
@@ -2382,6 +2933,7 @@ def predict_live(
                 "call_to_action_count",
                 "scam_signal_count",
                 "scam_signal_groups",
+                "url_only_or_link_only",
             ]
         },
         "psychological_triggers": {
@@ -2397,9 +2949,241 @@ def predict_live(
         "risk_band": risk_band,
         "organic_score": round(organic_score, 4),
         "evidence_level": evidence_level,
+        "nlp_text_risk": None if nlp_text_risk is None else round(float(nlp_text_risk), 4),
+        "nlp_model_used": bool(nlp_model_used),
         "top_reasons": list(dict.fromkeys(reasons))[:8],
         "used_features": used_features,
     }
+
+
+def _resolve_column(
+    df: pd.DataFrame,
+    requested_column: Optional[str] = None,
+    candidate_names: Optional[Iterable[str]] = None,
+) -> Optional[Any]:
+    if requested_column:
+        if requested_column in df.columns:
+            return requested_column
+        requested_normalized = normalize_column_name(requested_column)
+        for column in df.columns:
+            if normalize_column_name(column) == requested_normalized:
+                return column
+        available = ", ".join(str(column) for column in df.columns)
+        raise ValueError(f"Column '{requested_column}' was not found. Available columns: {available}")
+
+    if not candidate_names:
+        return None
+    normalized_candidates = {normalize_column_name(name) for name in candidate_names}
+    for column in df.columns:
+        if normalize_column_name(column) in normalized_candidates:
+            return column
+    return None
+
+
+def _read_live_inference_csv(
+    input_path: Path,
+    no_header: bool = False,
+    csv_sep: str = ",",
+) -> pd.DataFrame:
+    input_path = Path(input_path)
+    header = None if no_header else "infer"
+    df = pd.read_csv(
+        input_path,
+        dtype=str,
+        keep_default_na=False,
+        encoding="utf-8-sig",
+        sep=None if csv_sep == "auto" else csv_sep,
+        engine="python",
+        header=header,
+    )
+    if no_header or df.empty:
+        return df
+
+    auto_text_column = _resolve_column(df, candidate_names=TEXT_COLUMN_CANDIDATES)
+    if auto_text_column is None and len(df.columns) == 1:
+        only_column = str(df.columns[0])
+        looks_like_text_value = len(only_column) >= 24 or len(only_column.split()) >= 4
+        if looks_like_text_value:
+            df = pd.read_csv(
+                input_path,
+                dtype=str,
+                keep_default_na=False,
+                encoding="utf-8-sig",
+                sep=None if csv_sep == "auto" else csv_sep,
+                engine="python",
+                header=None,
+            )
+    return df
+
+
+def _cell_value(row: pd.Series, column: Optional[Any], fallback: Optional[str] = None) -> Optional[str]:
+    if column is None:
+        return fallback
+    value = _clean_scalar(row.get(column, ""))
+    return value if value else fallback
+
+
+def _prediction_to_flat_row(
+    prediction: Dict[str, Any],
+    source_row: int,
+    source_column: str,
+    text: str,
+) -> Dict[str, Any]:
+    used_features = prediction.get("used_features", {})
+    text_features = used_features.get("text_features", {})
+    trigger_counts = used_features.get("psychological_triggers", {})
+    active_triggers = [
+        name
+        for name, count in trigger_counts.items()
+        if isinstance(count, (int, float)) and count > 0
+    ]
+    return {
+        "source_row": source_row,
+        "source_column": source_column,
+        TEXT_COL: text,
+        "label": prediction.get("label"),
+        "risk_band": prediction.get("risk_band"),
+        "risk_score": prediction.get("risk_score"),
+        "organic_score": prediction.get("organic_score"),
+        "evidence_level": prediction.get("evidence_level"),
+        "nlp_text_risk": prediction.get("nlp_text_risk"),
+        "nlp_model_used": prediction.get("nlp_model_used"),
+        "top_reasons": ";".join(prediction.get("top_reasons", [])),
+        "psychological_triggers": ";".join(active_triggers),
+        "content_risk": used_features.get("content_risk"),
+        "author_risk": used_features.get("author_risk"),
+        "coordination_risk": used_features.get("coordination_risk"),
+        "nlp_raw_text_risk": used_features.get("nlp_raw_text_risk"),
+        "nlp_support_allowed": used_features.get("nlp_support_allowed"),
+        "narrative_signature": used_features.get("narrative_signature"),
+        "char_len": text_features.get("char_len"),
+        "word_count": text_features.get("word_count"),
+        "link_signal_density": text_features.get("link_signal_density"),
+        "call_to_action_count": text_features.get("call_to_action_count"),
+        "scam_signal_count": text_features.get("scam_signal_count"),
+        "model_version": prediction.get("model_version"),
+    }
+
+
+def predict_dataframe(
+    df: pd.DataFrame,
+    text_column: Optional[str] = None,
+    all_cells: bool = False,
+    language: Optional[str] = None,
+    url: Optional[str] = None,
+    author_hash: Optional[str] = None,
+    date: Optional[str] = None,
+    english_keywords: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+    artifacts_dir: Path = ARTIFACT_DIR,
+) -> pd.DataFrame:
+    if context is None:
+        context = load_context(artifacts_dir)
+
+    resolved_text_column = None if all_cells else _resolve_column(
+        df,
+        requested_column=text_column,
+        candidate_names=TEXT_COLUMN_CANDIDATES,
+    )
+    if resolved_text_column is None and not all_cells and len(df.columns) == 1:
+        resolved_text_column = df.columns[0]
+
+    metadata_columns = {
+        field: _resolve_column(df, candidate_names=candidates)
+        for field, candidates in METADATA_COLUMN_CANDIDATES.items()
+    }
+
+    rows: List[Dict[str, Any]] = []
+    if all_cells or resolved_text_column is None:
+        metadata_column_values = {column for column in metadata_columns.values() if column is not None}
+        candidate_columns = [column for column in df.columns if column not in metadata_column_values]
+        for row_idx, row in df.reset_index(drop=True).iterrows():
+            for column in candidate_columns:
+                text = _clean_scalar(row.get(column, ""))
+                if not text:
+                    continue
+                prediction = predict_live(
+                    text,
+                    language=language,
+                    url=url,
+                    author_hash=author_hash,
+                    date=date,
+                    english_keywords=english_keywords,
+                    context=context,
+                    artifacts_dir=artifacts_dir,
+                )
+                rows.append(_prediction_to_flat_row(prediction, row_idx + 1, str(column), text))
+    else:
+        for row_idx, row in df.reset_index(drop=True).iterrows():
+            text = _clean_scalar(row.get(resolved_text_column, ""))
+            prediction = predict_live(
+                text,
+                language=_cell_value(row, metadata_columns["language"], language),
+                url=_cell_value(row, metadata_columns[URL_COL], url),
+                author_hash=_cell_value(row, metadata_columns[AUTHOR_COL], author_hash),
+                date=_cell_value(row, metadata_columns[DATE_COL], date),
+                english_keywords=_cell_value(row, metadata_columns[KEYWORDS_COL], english_keywords),
+                context=context,
+                artifacts_dir=artifacts_dir,
+            )
+            rows.append(_prediction_to_flat_row(prediction, row_idx + 1, str(resolved_text_column), text))
+
+    return pd.DataFrame(rows)
+
+
+def predict_csv_file(
+    input_csv: Path,
+    output_csv: Optional[Path] = None,
+    text_column: Optional[str] = None,
+    all_cells: bool = False,
+    no_header: bool = False,
+    csv_sep: str = ",",
+    language: Optional[str] = None,
+    url: Optional[str] = None,
+    author_hash: Optional[str] = None,
+    date: Optional[str] = None,
+    english_keywords: Optional[str] = None,
+    artifacts_dir: Path = ARTIFACT_DIR,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    artifacts_dir = Path(artifacts_dir)
+    input_csv = Path(input_csv)
+    if output_csv is None:
+        output_csv = artifacts_dir / "live_predictions.csv"
+    output_csv = Path(output_csv)
+
+    df = _read_live_inference_csv(input_csv, no_header=no_header, csv_sep=csv_sep)
+    predictions = predict_dataframe(
+        df,
+        text_column=text_column,
+        all_cells=all_cells,
+        language=language,
+        url=url,
+        author_hash=author_hash,
+        date=date,
+        english_keywords=english_keywords,
+        artifacts_dir=artifacts_dir,
+    )
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    predictions.to_csv(output_csv, index=False)
+
+    summary = {
+        "input_csv": str(input_csv),
+        "output_csv": str(output_csv),
+        "rows_read": int(len(df)),
+        "texts_scored": int(len(predictions)),
+        "high_count": int((predictions.get("risk_band", pd.Series(dtype=str)) == "High").sum()),
+        "review_count": int((predictions.get("risk_band", pd.Series(dtype=str)) == "Review").sum()),
+        "low_count": int((predictions.get("risk_band", pd.Series(dtype=str)) == "Low").sum()),
+    }
+    summary["manipulative_count"] = int((predictions.get("label", pd.Series(dtype=str)) == "Manipulative").sum())
+    summary["manipulative_share"] = (
+        summary["manipulative_count"] / max(summary["texts_scored"], 1)
+    )
+    summary_path = output_csv.with_suffix(".summary.json")
+    summary_path.write_text(json.dumps(_json_safe(summary), indent=2, ensure_ascii=False), encoding="utf-8")
+    summary["summary_json"] = str(summary_path)
+    return predictions, summary
 
 
 def smoke_test() -> None:
@@ -2543,6 +3327,21 @@ def smoke_test() -> None:
         assert short_prediction["label"] == "Organic"
         assert short_prediction["risk_score"] < REVIEW_THRESHOLD
         assert "SHORT_TEXT_LOW_EVIDENCE" in short_prediction["top_reasons"]
+    emoji_prediction = predict_live("🔥🔥🔥", context=context)
+    assert emoji_prediction["label"] == "Organic"
+    assert emoji_prediction["risk_score"] < REVIEW_THRESHOLD
+    assert "SHORT_TEXT_LOW_EVIDENCE" in emoji_prediction["top_reasons"]
+    url_only_prediction = predict_live("https://spam.example.com", context=context)
+    assert url_only_prediction["label"] == "Organic"
+    assert "EMPTY_TEXT" not in url_only_prediction["top_reasons"]
+    assert (
+        "LINK_HASHTAG_MENTION_DENSE" in url_only_prediction["top_reasons"]
+        or "URL_ONLY_OR_LINK_ONLY" in url_only_prediction["top_reasons"]
+    )
+    repeated_char_prediction = predict_live("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", context=context)
+    assert repeated_char_prediction["risk_band"] == "Review"
+    assert repeated_char_prediction["label"] == "Organic"
+    assert "REPEATED_CHARACTER_RUN" in repeated_char_prediction["top_reasons"]
     turkish_scam_prediction = predict_live(
         "Günde 5000 TL kazanmak ister misiniz? Ücretsiz VIP kripto grubumuza katılmak için profilimdeki linke tıklayın!",
         context=context,
@@ -2555,6 +3354,62 @@ def smoke_test() -> None:
     )
     assert phishing_prediction["label"] == "Manipulative"
     assert "PHISHING_URGENCY_THREAT" in phishing_prediction["top_reasons"]
+    batch_predictions = predict_dataframe(
+        pd.DataFrame(
+            {
+                TEXT_COL: [
+                    "The city council published the meeting notes and invited residents to comment.",
+                    "BUY NOW!!! FREE FREE FREE #deal #promo https://spam.example.com",
+                    "yes",
+                ]
+            }
+        ),
+        context=context,
+    )
+    assert len(batch_predictions) == 3
+    assert batch_predictions.iloc[0]["label"] == "Organic"
+    assert batch_predictions.iloc[1]["label"] == "Manipulative"
+    wide_predictions = predict_dataframe(
+        pd.DataFrame(
+            {
+                "cell_a": ["BUY NOW!!! FREE FREE FREE #deal #promo"],
+                "cell_b": ["Thanks for sharing the meeting notes."],
+            }
+        ),
+        all_cells=True,
+        context=context,
+    )
+    assert len(wide_predictions) == 2
+    assert {"source_row", "source_column", TEXT_COL, "risk_score", "label"}.issubset(wide_predictions.columns)
+    no_header_path = Path("/tmp/datathon_smoke_no_header.csv")
+    no_header_output = Path("/tmp/datathon_smoke_no_header_predictions.csv")
+    no_header_path.write_text(
+        "The city council published the meeting notes. \n"
+        "BUY NOW!!! FREE FREE FREE #deal #promo https://spam.example.com\n",
+        encoding="utf-8",
+    )
+    no_header_predictions, no_header_summary = predict_csv_file(
+        no_header_path,
+        output_csv=no_header_output,
+        no_header=True,
+    )
+    assert no_header_summary["texts_scored"] == 2
+    assert len(no_header_predictions) == 2
+    semicolon_path = Path("/tmp/datathon_smoke_semicolon.csv")
+    semicolon_output = Path("/tmp/datathon_smoke_semicolon_predictions.csv")
+    semicolon_path.write_text(
+        "original_text;language\n"
+        "The city council published the meeting notes.;en\n"
+        "BUY NOW!!! FREE FREE FREE #deal #promo https://spam.example.com;en\n",
+        encoding="utf-8",
+    )
+    semicolon_predictions, semicolon_summary = predict_csv_file(
+        semicolon_path,
+        output_csv=semicolon_output,
+        csv_sep=";",
+    )
+    assert semicolon_summary["texts_scored"] == 2
+    assert len(semicolon_predictions) == 2
     print("Smoke tests passed.")
 
 
@@ -2577,6 +3432,24 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     predict_parser.add_argument("--date", default=None)
     predict_parser.add_argument("--english-keywords", default=None)
     predict_parser.add_argument("--artifacts-dir", type=Path, default=ARTIFACT_DIR)
+
+    predict_csv_parser = subparsers.add_parser(
+        "predict-csv",
+        aliases=["predict_csv", "batch-predict"],
+        help="Run live prediction for a CSV file",
+    )
+    predict_csv_parser.add_argument("input_csv", type=Path)
+    predict_csv_parser.add_argument("--output", type=Path, default=None)
+    predict_csv_parser.add_argument("--text-column", default=None)
+    predict_csv_parser.add_argument("--all-cells", action="store_true")
+    predict_csv_parser.add_argument("--no-header", action="store_true")
+    predict_csv_parser.add_argument("--sep", default=",", help="CSV delimiter. Use 'auto' to enable delimiter sniffing.")
+    predict_csv_parser.add_argument("--language", default=None)
+    predict_csv_parser.add_argument("--url", default=None)
+    predict_csv_parser.add_argument("--author-hash", default=None)
+    predict_csv_parser.add_argument("--date", default=None)
+    predict_csv_parser.add_argument("--english-keywords", default=None)
+    predict_csv_parser.add_argument("--artifacts-dir", type=Path, default=ARTIFACT_DIR)
 
     subparsers.add_parser("smoke-test", help="Run lightweight tests without reading parquet")
 
@@ -2608,6 +3481,32 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
             artifacts_dir=args.artifacts_dir,
         )
         print(json.dumps(_json_safe(result), indent=2, ensure_ascii=False))
+    elif args.command in {"predict-csv", "predict_csv", "batch-predict"}:
+        predictions, summary = predict_csv_file(
+            input_csv=args.input_csv,
+            output_csv=args.output,
+            text_column=args.text_column,
+            all_cells=args.all_cells,
+            no_header=args.no_header,
+            csv_sep=args.sep,
+            language=args.language,
+            url=args.url,
+            author_hash=args.author_hash,
+            date=args.date,
+            english_keywords=args.english_keywords,
+            artifacts_dir=args.artifacts_dir,
+        )
+        print(json.dumps(_json_safe(summary), indent=2, ensure_ascii=False))
+        preview_cols = [
+            TEXT_COL,
+            "label",
+            "risk_band",
+            "risk_score",
+            "top_reasons",
+        ]
+        preview_cols = [col for col in preview_cols if col in predictions.columns]
+        if preview_cols:
+            print(predictions[preview_cols].head(10).to_string(index=False))
     elif args.command == "smoke-test":
         smoke_test()
 

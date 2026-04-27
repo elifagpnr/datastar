@@ -1,0 +1,2 @@
+model_version,hash_dim,positive_candidates,negative_candidates,train_docs_per_class,trained,positive_rule,negative_rule,positive_doc_features,negative_doc_features,alpha,scoring
+pseudo-label-hash-ngram-v1,131072,3656,112968,3656,True,"risk_score >= 0.65, non-empty, meaningful text, strong reason","risk_score <= 0.20, LOW_CONTENT_RISK, non-empty, meaningful text",2626537,1227382,0.5,sigmoid(mean(feature_log_odds)) with rule-evidence gate
