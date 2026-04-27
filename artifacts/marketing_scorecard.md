@@ -33,6 +33,8 @@ Bu bölüm gözetimsiz bir kanıt katmanıdır. Proxy metrikler, senaryo kontrol
 | `live_inference_benchmark.png` | Sentetik canlı inference senaryolarının risk skorlarını eşiklerle birlikte gösterir. | Jürinin gizli metin testine hazır olduğumuzu göstermek için kullanılır. |
 | `coordination_confidence_bubble.png` | Coordination cluster'larının zaman penceresi, güven skoru, boyut ve coordination risk ilişkisini gösterir. | Koordineli davranış tespitinin sadece metin değil, zaman ve author yayılımıyla desteklendiğini anlatır. |
 | `evidence_quality_summary.png` | High-risk kararların ne kadarının boş olmayan, güçlü reason destekli, içerik/author/coordination destekli olduğunu gösterir. | High-risk karar kalitesini ve savunulabilirliği özetler. |
+| `feature_importance_proxy.png` | Etiket olmadığı için klasik feature importance yerine, skor formülüne göre High-risk satırlarda en çok katkı yapan engineered sinyalleri gösterir. | Hangi feature engineering kararlarının skoru taşıdığını dürüst ve açıklanabilir şekilde anlatır. |
+| `risk_component_contribution.png` | Low/Review/High bandlarında content, author, coordination ve rule-floor katkılarının ortalama dağılımını gösterir. | Metadata ve text sinyallerinin final skorda nasıl birleştiğini görselleştirir. |
 | `case_studies.md` | Gerçek skorlanmış satırlardan seçilen 3 savunulabilir hikayeyi özetler. | Jürinin 'somut örnek göster' sorusuna doğrudan cevap olarak kullanılır. |
 
 Önerilen konumlandırma: Etiketsiz sosyal medya verisi için açıklanabilir, seçici ve canlı inference'a hazır risk skorlama sistemi.

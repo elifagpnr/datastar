@@ -88,4 +88,6 @@
 - `live_inference_benchmark.png`: Canlı inference senaryolarında risk skorlarını ve eşik davranışını gösterir.
 - `coordination_confidence_bubble.png`: Koordinasyon cluster'larında zaman penceresi, güven, boyut ve risk ilişkisini gösterir.
 - `evidence_quality_summary.png`: High-risk kararların savunulabilirlik kalitesini özetler.
+- `feature_importance_proxy.png`: Etiketsiz ortamda klasik feature importance yerine skor formülüne göre katkı yapan sinyalleri gösterir.
+- `risk_component_contribution.png`: Risk bandlarına göre content, author, coordination ve rule-floor katkılarını gösterir.
 - `case_studies.md`: Finansal scam, koordinasyon ve psikolojik tetikleyici örneklerini gerçek skorlanmış satırlardan hikayeleştirir.

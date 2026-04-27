@@ -1,0 +1,57 @@
+{
+  "input_csv": "jury_inputs/test.csv",
+  "output_csv": "artifacts/jury_predictions_test.csv",
+  "rows_read": 8,
+  "texts_scored": 8,
+  "low_count": 0,
+  "review_count": 0,
+  "high_count": 8,
+  "review_high_count": 8,
+  "manipulative_count": 8,
+  "low_share": 0.0,
+  "review_share": 0.0,
+  "high_share": 1.0,
+  "review_high_share": 1.0,
+  "manipulative_share": 1.0,
+  "risk_score_mean": 0.6975,
+  "risk_score_median": 0.72,
+  "risk_score_p90": 0.72,
+  "risk_score_max": 0.72,
+  "content_risk_mean": 0.6975,
+  "nlp_text_risk_mean": 0.6808125,
+  "evidence_text_only_count": 8,
+  "evidence_text_only_share": 1.0,
+  "top_reason_codes": {
+    "TEXT_ONLY_METADATA_UNAVAILABLE": 7,
+    "CALL_TO_ACTION_LANGUAGE": 6,
+    "NLP_TEXT_MODEL_SUPPORT": 4,
+    "URGENCY_LANGUAGE": 4,
+    "COORDINATED_AMPLIFICATION_LANGUAGE": 4,
+    "FINANCIAL_OR_CRYPTO_BAIT": 3,
+    "ENGAGEMENT_OR_LINK_BAIT": 3,
+    "FOMO_TRIGGER": 2
+  },
+  "top_psychological_triggers": {
+    "urgency_bait": 4,
+    "fomo_trigger": 2,
+    "social_proof_trigger": 2
+  },
+  "summary_csv": "artifacts/jury_predictions_test_summary.csv",
+  "summary_markdown": "artifacts/jury_predictions_test_summary.md",
+  "top_risk_examples_csv": "artifacts/jury_predictions_test_top_risk_examples.csv",
+  "batch_plot_paths": [
+    "artifacts/jury_predictions_test_risk_band_distribution.png",
+    "artifacts/jury_predictions_test_risk_score_histogram.png",
+    "artifacts/jury_predictions_test_reason_code_breakdown.png",
+    "artifacts/jury_predictions_test_psychological_trigger_breakdown.png"
+  ],
+  "submission_output_csv": "artifacts/jury_predictions_test.csv",
+  "detailed_output_csv": "artifacts/jury_predictions_test_detailed.csv",
+  "submission_columns": [
+    "test_id",
+    "text",
+    "label"
+  ],
+  "label_definition": "0-1 manipulative risk score; 0 means more organic, 1 means more manipulative.",
+  "summary_json": "artifacts/jury_predictions_test.summary.json"
+}

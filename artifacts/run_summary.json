@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-26T23:40:34.366734+00:00",
+  "created_at": "2026-04-27T09:41:32.432104+00:00",
   "data_path": "dataset/datathonFINAL.parquet",
   "sample_size_requested": 200000,
   "risk_threshold": 0.65,
@@ -18,7 +18,9 @@
     "artifacts/psychological_trigger_breakdown.png",
     "artifacts/live_inference_benchmark.png",
     "artifacts/coordination_confidence_bubble.png",
-    "artifacts/evidence_quality_summary.png"
+    "artifacts/evidence_quality_summary.png",
+    "artifacts/feature_importance_proxy.png",
+    "artifacts/risk_component_contribution.png"
   ],
   "case_studies_path": "artifacts/case_studies.md",
   "suspicious_count": 10264,
@@ -868,6 +870,13 @@
   "high_risk_non_empty_share": 0.9827280779450841,
   "high_risk_strong_reason_share": 0.8294951284322409,
   "high_confidence_coordination_cluster_count": 9,
+  "feature_contribution_summary_csv": "artifacts/feature_contribution_summary.csv",
+  "risk_component_contribution_summary_csv": "artifacts/risk_component_contribution_summary.csv",
+  "feature_contribution_summary_md": "artifacts/feature_contribution_summary.md",
+  "feature_contribution_plots": [
+    "artifacts/feature_importance_proxy.png",
+    "artifacts/risk_component_contribution.png"
+  ],
   "nlp_text_model": {
     "model_version": "pseudo-label-hash-ngram-v1",
     "hash_dim": 131072,

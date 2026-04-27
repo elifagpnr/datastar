@@ -26,7 +26,7 @@ Sistem iki çalışma modunu destekler:
 | Mod | Komut / Fonksiyon | Amaç |
 |---|---|---|
 | Tek metin canlı inference | `predict_live()` veya `python3 datathon_pipeline.py predict "..."` | Jürinin tekil gizli metin vermesi durumunda anlık skor üretmek. |
-| CSV batch inference | `python3 datathon_pipeline.py predict-csv jury_texts.csv --output artifacts/jury_predictions.csv` | Jürinin 100+ satırlı CSV vermesi durumunda tüm metinleri tek seferde skorlamak. |
+| CSV batch inference | `python3 datathon_pipeline.py predict-csv jury_inputs/jury_texts.csv --output artifacts/jury_predictions.csv` | Jürinin 100+ satırlı CSV vermesi durumunda tüm metinleri tek seferde skorlamak ve batch-level özet/grafik üretmek. |
 | Veri seti artifact üretimi | `python3 datathon_pipeline.py run --sample-size 200000` | Final skor dosyaları, grafikler, scorecard ve pitch deck üretmek. |
 
 Final 200k örneklem artifact run özeti:
@@ -44,6 +44,7 @@ Final 200k örneklem artifact run özeti:
 | Sunuma uygun güçlü High örnek | 3,746 |
 | Yüksek güvenli koordinasyon cluster | 9 |
 | Canlı inference hazırlık benchmark | 10/10 |
+| Feature contribution artifact'leri | Hazır |
 
 Bu metrikler etiketli başarı metrikleri değildir. Bunlar sistemin seçicilik, açıklanabilirlik, canlı çalışabilirlik ve kanıt üretme kalitesini gösteren proxy metriklerdir.
 
@@ -305,6 +306,9 @@ Etiket olmadığı için accuracy iddia etmek yerine proxy kanıt artifact'leri 
 - `evidence_quality_summary.png`
 - `language_manipulative_share.png`
 - `platform_normalized_risk.png`
+- `feature_importance_proxy.png`
+- `risk_component_contribution.png`
+- `feature_contribution_summary.csv/md`
 
 Bu grafiklerin amacı modeli olduğundan iyi göstermek değil; iyi çalıştığı yerleri dürüst ve ölçülebilir biçimde görünür kılmaktır.
 
@@ -343,6 +347,7 @@ Desteklenen senaryolar:
 
 | CSV Formatı | Çözüm |
 |---|---|
+| `test_id,text` kolonları var | `text` otomatik skorlanır, `test_id` çıktı CSV'sinde korunur. |
 | `original_text` kolonu var | Otomatik kullanılır. |
 | Tek kolonlu CSV | Otomatik text kolonu kabul edilir. |
 | Header yok | `--no-header`. |
@@ -351,6 +356,25 @@ Desteklenen senaryolar:
 | Semicolon delimiter | `--sep ";"`. |
 
 Bu, canlı jüri koşullarına doğrudan hazır olduğumuzu gösterir.
+
+Son güncellemede CSV batch inference çıktısı genişletildi. Artık sistem yalnızca satır bazlı tahmin üretmez; aynı zamanda dosya düzeyinde özet metrikler ve görsel analiz artifact'leri üretir.
+
+Jüri CSV çalıştırıldığında oluşan ana çıktılar:
+
+| Çıktı | İçerik |
+|---|---|
+| `jury_predictions_<dosya>.csv` | Jüriye verilecek 3 kolonlu submission dosyası: `test_id`, `text`, `label`. |
+| `jury_predictions_<dosya>_detailed.csv` | Her metin için risk band, risk score, reason code ve feature çıktıları. |
+| `jury_predictions_<dosya>.summary.json` | Makine okunabilir batch özet dosyası. |
+| `jury_predictions_<dosya>_summary.csv` | Ortalama, median, P90 risk skoru ve band oranları. |
+| `jury_predictions_<dosya>_summary.md` | Jüriye okunabilir kısa batch raporu. |
+| `jury_predictions_<dosya>_top_risk_examples.csv` | En yüksek riskli örneklerin hızlı inceleme listesi. |
+| `jury_predictions_<dosya>_risk_band_distribution.png` | Low/Review/High dağılım grafiği. |
+| `jury_predictions_<dosya>_risk_score_histogram.png` | CSV içindeki risk skoru histogramı. |
+| `jury_predictions_<dosya>_reason_code_breakdown.png` | CSV'de en sık görülen reason code'lar. |
+| `jury_predictions_<dosya>_psychological_trigger_breakdown.png` | CSV'de görülen psikolojik tetikleyiciler. |
+
+Bu çıktılar da etiketli performans metriği değildir; jüri tarafından verilen gizli dosyanın risk kompozisyonunu ve açıklama kapsamını hızlıca analiz etmek için kullanılır.
 
 ## 6. Feature Engineering Katmanları
 
@@ -538,6 +562,40 @@ cluster_confidence_score =
 - Bu sprintte coordination risk formülüne ek bir `language_spread_risk` ağırlığı eklenmedi.
 - Sistem çevrilmiş aynı kampanyaları semantik olarak eşleştirdiğini iddia etmez; yalnızca aynı signature altında çok dilli yayılım varsa bunu kanıt alanı olarak raporlar.
 
+### 6.10 Feature Contribution / Proxy Importance
+
+Son aşamada feature engineering katmanlarının skora ne kadar katkı verdiğini görünür kılmak için formül tabanlı bir contribution analizi eklendi.
+
+Bu bölüm özellikle dikkatli konumlandırılmalıdır:
+
+> Bu klasik supervised feature importance değildir. Ground truth label olmadığı için SHAP, permutation importance veya model tabanlı gerçek predictive importance iddiası kurmuyoruz. Bunun yerine mevcut açıklanabilir skor formülünde her engineered sinyalin risk skoruna yaptığı katkıyı hesaplıyoruz.
+
+Üretilen artifact'ler:
+
+| Artifact | Ne Gösterir? |
+|---|---|
+| `feature_contribution_summary.csv` | Content feature'larının High-risk satırlarda ortalama katkısını, aktif olduğu satır sayısını ve toplam katkısını gösterir. |
+| `feature_contribution_summary.md` | Contribution sonuçlarını sunum/rapor formatında özetler. |
+| `feature_importance_proxy.png` | High-risk satırlarda skor formülüne en çok katkı yapan engineered sinyalleri sıralar. |
+| `risk_component_contribution_summary.csv` | Content, author, coordination ve rule-floor katkılarının band bazlı özetini verir. |
+| `risk_component_contribution.png` | Low/Review/High bandlarında final risk skorunun hangi bileşenlerden geldiğini görselleştirir. |
+
+Bu analizde iki ayrı katkı seviyesi vardır:
+
+1. **Feature-level contribution:** `short/tiny text`, `token repetition`, `link density`, `scam pattern groups`, `extreme sentiment`, `CTA density` gibi content feature'larının katkısı.
+2. **Component-level contribution:** Final risk skorunda `content`, `author`, `coordination` ve rule-floor etkilerinin ortalama payı.
+
+Final 200k artifact run'da High-risk kararları en çok şu sinyallerin taşıdığı görüldü:
+
+- `High-risk lure floor`
+- `Scam/manipulation pattern groups`
+- `Token repetition`
+- `Link/hashtag/mention density`
+- `Extreme sentiment`
+- `Call-to-action density`
+
+Bu sonuçlar, modelin kararlarının tek bir feature'a değil; scam pattern, tekrar, link yoğunluğu, sentiment uçluğu ve CTA gibi birden fazla açıklanabilir sinyalin birleşimine dayandığını gösterir.
+
 ## 7. Content Risk Formülü
 
 Ana içerik skoru:
@@ -653,6 +711,10 @@ Kullanılmayanlar:
 | `risk_funnel.png` | Tüm veriden güçlü kanıtlı High örneklere daralan seçim hunisi. |
 | `temporal_burst_windows.csv/png` | Saatlik risk oranındaki z-score sıçramalarını ve Campaign Burst pencerelerini gösterir. |
 | `evidence_quality_summary.png` | High-risk kararların savunulabilirlik kalitesi. |
+| `feature_contribution_summary.csv/md` | Skor formülüne göre engineered feature katkılarının proxy özeti. |
+| `feature_importance_proxy.png` | High-risk satırlarda en çok katkı yapan feature sinyalleri. |
+| `risk_component_contribution_summary.csv` | Content, author, coordination ve rule-floor katkılarının tablo özeti. |
+| `risk_component_contribution.png` | Risk bandlarına göre final skoru taşıyan bileşenler. |
 | `live_inference_benchmark.csv/png` | Canlı inference hazırlık senaryoları. |
 | `case_studies.md` | Gerçek skorlanmış satırlardan seçilmiş finansal scam, koordinasyon ve psikolojik tetikleyici hikayeleri. |
 | `marketing_scorecard.md` | Jüriye kısa, dürüst kanıt özeti. |
@@ -695,8 +757,19 @@ python3 datathon_pipeline.py predict-csv jury_texts.csv --sep ";" --output artif
 CSV çıktısında kaynak satır ve kolon bilgisi de tutulur:
 
 ```text
+test_id
+text
+label
+```
+
+Buradaki `label`, 0-1 arası manipülatiflik skorudur. `0` daha organik, `1` daha manipülatif anlamına gelir. Bu değer internal `risk_score` alanından gelir.
+
+Detaylı analiz çıktısı ayrıca `_detailed.csv` dosyasına yazılır:
+
+```text
 source_row
 source_column
+test_id
 original_text
 label
 risk_band
@@ -706,6 +779,30 @@ top_reasons
 nlp_text_risk
 evidence_level
 ```
+
+Batch inference ayrıca dosya düzeyinde analiz üretir:
+
+```text
+artifacts/jury_predictions_<dosya>.summary.json
+artifacts/jury_predictions_<dosya>_summary.csv
+artifacts/jury_predictions_<dosya>_summary.md
+artifacts/jury_predictions_<dosya>_top_risk_examples.csv
+artifacts/jury_predictions_<dosya>_risk_band_distribution.png
+artifacts/jury_predictions_<dosya>_risk_score_histogram.png
+artifacts/jury_predictions_<dosya>_reason_code_breakdown.png
+artifacts/jury_predictions_<dosya>_psychological_trigger_breakdown.png
+```
+
+Bu batch özetleri şu sorulara cevap verir:
+
+- 100+ satırlık jüri dosyasında ortalama, median ve P90 risk skoru kaç?
+- Low/Review/High dağılımı nasıl?
+- Review + High oranı ne kadar?
+- En sık görülen reason code'lar neler?
+- Psikolojik tetikleyici dağılımı nasıl?
+- En yüksek riskli örnekler hangileri?
+
+Notebook'ta `## 8. Jury CSV Batch Inference` hücresi bu çıktıları otomatik gösterir. Sunum sırasında jüri dosyası `jury_inputs/` klasörüne konur ve yalnızca `JURY_CSV_FILENAME` satırı değiştirilir.
 
 ## 12. Validasyon ve Testler
 
@@ -731,6 +828,8 @@ Smoke test kapsamı:
 - URL-only metinler crash üretmemeli, `EMPTY_TEXT` olmamalı ve link-only reason taşımalı.
 - Çok uzun tek karakter tekrarı `REPEATED_CHARACTER_RUN` ile Review bandına düşmeli.
 - Headersız ve semicolon CSV dosyaları batch inference ile okunmalı.
+- Batch CSV çalıştırıldığında summary JSON/CSV/MD ve 4 görsel analiz grafiği oluşmalı.
+- Feature contribution CSV/MD ve iki proxy contribution grafiği oluşmalı.
 - Türkçe kripto/gelir vaadi manipülatif yakalanmalı.
 - Phishing tehdidi manipülatif yakalanmalı.
 - Batch CSV prediction temel örneklerde doğru satır sayısını ve beklenen label'ları üretmeli.
@@ -776,6 +875,7 @@ Bu sonuç etiketli accuracy değildir. Canlı inference davranışının beklene
 Bu projenin güçlü olması, sınırlarının olmadığı anlamına gelmez. Sunumda dürüstçe şu çerçeve korunmalıdır:
 
 - Ground truth label olmadığı için accuracy/precision/recall iddia edilmez.
+- Feature contribution çıktıları supervised feature importance değildir; yalnızca mevcut skor formülüne göre proxy katkıyı gösterir.
 - Pattern tabanlı sinyaller yeni spam jargonları için zamanla genişletilmelidir.
 - Sadece `original_text` verilen canlı testte author ve coordination sinyalleri sınırlı kalır.
 - NLP destek modeli pseudo-label kaynaklıdır; gerçek supervised model değildir.
@@ -786,7 +886,7 @@ Bu projenin güçlü olması, sınırlarının olmadığı anlamına gelmez. Sun
 
 Kısa teknik anlatım:
 
-> Etiketli test seti olmadığı için supervised accuracy modeli kurmadık. Bunun yerine içerik, author davranışı ve koordinasyon sinyallerinden oluşan açıklanabilir bir risk skorlama pipeline'ı geliştirdik. Her karar reason code ile açıklanıyor. Jürinin vereceği tekil metinleri veya 100+ satırlı CSV dosyasını canlı olarak skorlayabiliyoruz. Metadata varsa karar author ve coordination sinyalleriyle güçleniyor; sadece original_text varsa content feature'ları ve pseudo-label hash n-gram NLP destek modeliyle skor üretiyoruz.
+> Etiketli test seti olmadığı için supervised accuracy modeli kurmadık. Bunun yerine içerik, author davranışı ve koordinasyon sinyallerinden oluşan açıklanabilir bir risk skorlama pipeline'ı geliştirdik. Her karar reason code ile açıklanıyor. Jürinin vereceği tekil metinleri veya 100+ satırlı CSV dosyasını canlı olarak skorlayabiliyoruz. CSV geldiğinde satır bazlı tahminin yanında risk band dağılımı, reason code dağılımı, psikolojik tetikleyici dağılımı ve batch summary grafiklerini de üretiyoruz. Metadata varsa karar author ve coordination sinyalleriyle güçleniyor; sadece original_text varsa content feature'ları ve pseudo-label hash n-gram NLP destek modeliyle skor üretiyoruz.
 
 Pazarlama cümlesi:
 
@@ -798,7 +898,7 @@ Kaçınılması gereken iddia:
 
 Doğru iddia:
 
-> Etiket olmadığı için accuracy iddia etmiyoruz; bunun yerine seçicilik, açıklanabilirlik, canlı inference readiness, risk band dağılımı, reason code kapsamı ve coordination confidence gibi proxy kanıt metrikleri raporluyoruz.
+> Etiket olmadığı için accuracy iddia etmiyoruz; bunun yerine seçicilik, açıklanabilirlik, canlı inference readiness, risk band dağılımı, reason code kapsamı, coordination confidence ve skor formülüne dayalı feature contribution gibi proxy kanıt metrikleri raporluyoruz.
 
 ## 16. Son Durum
 
@@ -811,6 +911,8 @@ Mevcut proje durumu sunuma çıkabilir seviyededir:
 - 200k final artifact seti üretilmiş durumda.
 - Grafikler ve scorecard hazır.
 - Feature engineering raporu hazır.
+- Feature contribution / proxy importance artifact'leri hazır.
+- Jüri CSV batch summary ve görsel analiz çıktıları hazır.
 - Bu teknik proje raporu hazır.
 
 Son kontrol komutları:
